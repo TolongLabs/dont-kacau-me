@@ -22,6 +22,7 @@ Contents:
    1. [Receipt delivery and tracking](#receipt-delivery-and-tracking)
    1. [The receipt schema](#the-receipt-schema)
    1. [Policy and authority](#policy-and-authority)
+   1. [Surviving a usage limit](#surviving-a-usage-limit)
 1. [Tech stack](#tech-stack)
 1. [Getting started](#getting-started)
    1. [Prerequisites](#prerequisites)
@@ -72,6 +73,7 @@ committed policy clears the routine prompts, and the migration still waits for a
 - **Policy-backed autonomy.** Routine prompts can resolve as `allow`; mechanical blast-radius rules preserve `ask` and
   `deny`.
 - **Auditable decisions.** Every autonomous answer is logged before it is returned and summarised in the next receipt.
+- **Survives a usage limit.** A supervised run waits for the reset the server named and resumes the same session.
 - **Pure hooks.** There is no daemon, background poller or model call on the hot path.
 - **Small command surface.** Bind work, follow dependencies, report blockers and inspect status without reading raw
   transcripts.
@@ -213,6 +215,25 @@ authority can widen that authority without anyone deciding to.
 Every autonomous decision appends to `.dkm/decisions.jsonl` before DKM returns it, not after. The record names the rule,
 the inputs and how to reverse it. Its count and summary surface in the receipt, turning an audit into a handful of lines
 instead of a replay of the whole turn.
+
+### Surviving a usage limit
+
+A long overnight run used to end the moment the account's usage limit was reached, and everything after that point
+simply did not happen. Start it under the supervisor instead:
+
+```bash
+bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts revive "work through issue 12" -- --effort high
+```
+
+It **waits; it never evades.** When a run stops on a limit, the supervisor reads the reset time the server itself
+reported, sleeps until then, and resumes **the same session by id** so the work continues where it was interrupted
+rather than starting over. A genuine error stops it instead of being retried forever, and a limit that reports no
+session id stops it too, because restarting from the prompt would repeat work already done.
+
+Every pause is appended to `.dkm/revivals.jsonl`, so a night can be reconstructed in the morning.
+
+This is the one part of DKM that is not a hook. It is a foreground process you start instead of starting `claude`, it is
+opt-in, and nothing runs in the background when you are not running it.
 
 ## Tech stack
 

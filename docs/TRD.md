@@ -13,6 +13,7 @@ Contents:
 1. [The receipt](#the-receipt)
 1. [Tracking tiers](#tracking-tiers)
 1. [The decision engine](#the-decision-engine)
+1. [Surviving a usage limit](#surviving-a-usage-limit)
 1. [Loops and dedup keys](#loops-and-dedup-keys)
 1. [Failure modes](#failure-modes)
 1. [Testing](#testing)
@@ -67,6 +68,8 @@ only the cursors. The `.gitignore` entry is `.dkm/*` with `!.dkm/policy.toml`.
 | `.dkm/decisions.jsonl`       | Append-only record of every autonomous decision                | JSONL          |
 | `.dkm/last-emit.json`        | Last emitted state per work item, for delta detection          | JSON           |
 | `.dkm/report/<session>.json` | Session-authored narrative and blockers for the next receipt   | JSON           |
+| `.dkm/revivals.jsonl`        | Append-only record of every usage-limit pause and resume       | JSONL          |
+| `.dkm/last-session.json`     | The session that ended last, and the reason the harness gave   | JSON           |
 
 `.dkm/policy.toml` is the one file that is committed, because it is the human grant that makes autonomy legitimate.
 Everything else is machine state.
@@ -87,9 +90,10 @@ Every hook receives the standard payload on stdin, including `session_id`, `cwd`
 | `SessionStart`      | `cwd`                 | Drain `.dkm/pending/`, write to stdout so it reaches the model     |
 | `UserPromptSubmit`  | `cwd`                 | Fetch since cursor, drain pending, write to stdout                 |
 | `PermissionRequest` | tool name, tool input | Answer `allow` or `deny`, or emit nothing to leave it to the human |
+| `SessionEnd`        | `reason`              | Record the session id and the reason, so a run can be resumed      |
 
-The registered timeouts are 20s for `Stop`, 15s for `SessionStart` and `UserPromptSubmit`, and 5s for
-`PermissionRequest`.
+The registered timeouts are 20s for `Stop`, 15s for `SessionStart` and `UserPromptSubmit`, 10s for `SessionEnd` and 5s
+for `PermissionRequest`.
 
 **`PermissionRequest` output.** Exit code 2 is ignored by this event; the decision must be in the payload, and the
 payload is schema-validated. A shape the harness does not recognise is treated as a **hook failure, which denies the
@@ -310,6 +314,57 @@ strings such as `blast:${trip}` or `policy.allow[${i}]`; the example above shows
 
 **There is no path from an inbound message to a decision.** The engine reads `policy.toml`, the tool payload and the
 repository. It never reads `.dkm/pending/`. `NFR-AUTH` asserts this by test.
+
+## Surviving a usage limit
+
+A long autonomous run ends when the account's usage limit is reached, and everything after that point is simply not
+done. `dkm revive "<prompt>"` makes the limit a pause instead of an ending.
+
+**It waits; it never evades.** The delay is the reset the server itself reported. There is no retry that runs sooner
+than that, and no path that changes credentials or account.
+
+**This is the one part of DKM that is not a hook.** `NFR-NODAEMON` governs ingest and emit, which still run only when
+the harness fires a hook. The supervisor is a foreground process the human starts instead of starting `claude`, and it
+lives for as long as the run does. Nothing schedules it, nothing runs in the background when it is not running, and
+using it is opt-in.
+
+### Detecting the limit
+
+The contract is `claude --output-format json`. A limit is recognised when any of these hold, because a limit mistaken
+for a crash ends the very loop this exists to protect:
+
+- `api_error_status` is `429`
+- `subtype`, `terminal_reason`, `stop_reason`, `result` or `error` contains `limit_reached`, `quota_exceeded`,
+  `rate_limit`, `usage_limit` or `usage limit reached`
+- the output could not be parsed as JSON at all, but the raw text carries one of those markers
+
+`is_error` with none of the above is a genuine failure and stops the supervisor rather than being retried forever.
+
+### Waiting and resuming
+
+| Input                                              | Wait                                      |
+| -------------------------------------------------- | ----------------------------------------- |
+| A reset time between 1 minute and 6 hours away     | Until that time, plus a 30-second cushion |
+| A reset time further away than 6 hours             | 6 hours, then re-check                    |
+| A reset time already in the past, or none readable | `60s × 2^(attempt-1)`, capped at 6 hours  |
+
+The reset time is read from an explicit `resetsAt` or `resetAt` field when present, otherwise from the phrase following
+`reset` in the message. Epoch seconds, epoch milliseconds, an ISO timestamp and a bare clock time are all accepted; a
+clock time that has already passed today rolls to tomorrow. A parsed time is trusted only inside that window, because a
+misparse into the far future stalls the run until someone notices and one into the past spins against a live limit.
+
+The first attempt starts a session from the prompt. **Every later attempt resumes the same session by id**, so the work
+continues where the limit interrupted it. A limit that reports no session id stops the supervisor: restarting from the
+prompt would repeat work already paid for and could repeat side effects.
+
+Every pause appends to `.dkm/revivals.jsonl`, which is kept separate from `decisions.jsonl` so operational history does
+not dilute the permission audit a human reads.
+
+### What the hook contributes
+
+`SessionEnd` writes `.dkm/last-session.json` with the session id, the cwd and the reason the harness gave, recorded
+unexamined. A hook cannot tell a usage limit from a clean exit, and a hook that guessed would resume sessions nobody
+wanted resumed.
 
 ## Loops and dedup keys
 

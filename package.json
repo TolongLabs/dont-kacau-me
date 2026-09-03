@@ -1,0 +1,27 @@
+{
+  "name": "dont-kacau-me",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "lint": "biome check . && prettier --check \"**/*.{md,markdown,yaml,yml}\"",
+    "format": "biome format --write . && prettier --write \"**/*.{md,markdown,yaml,yml}\"",
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,js,mjs,cjs,json,jsonc}": "biome check --write --no-errors-on-unmatched",
+    "*.{md,yaml,yml}": "prettier --write"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "@types/bun": "^1.4.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2"
+  },
+  "trustedDependencies": ["@biomejs/biome"]
+}

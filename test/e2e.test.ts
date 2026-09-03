@@ -368,6 +368,64 @@ test('7b. a blocker recorded by the CLI reaches the receipt for that session', (
   }
 })
 
+test("7c. the decision summary counts the turn, not the session's whole lifetime", () => {
+  const root = makeRepo()
+  try {
+    const logPath = join(root, 'gh.log')
+    const env = setupForTest(
+      root,
+      {
+        'issue-get': [{ stdout: boundIssue }],
+        'repo-view': [{ stdout: 'R_1' }],
+        'check-runs': [{ stdout: emptyChecks }, { stdout: emptyChecks }],
+        'comment-list': [{ stdout: emptyComments }, { stdout: existingComment }],
+        'comment-create': [{ stdout: newComment }],
+        'comment-patch': [{ stdout: newComment }]
+      },
+      logPath
+    )
+    bind(root, 42, env)
+
+    const decide = (command: string) =>
+      runHook(
+        'permission-request',
+        root,
+        {
+          session_id: 's1',
+          cwd: root,
+          hook_event_name: 'PermissionRequest',
+          tool_name: 'Bash',
+          tool_input: { command }
+        },
+        env
+      )
+
+    decide('ls one')
+    decide('ls two')
+    runHook('stop', root, { session_id: 's1', cwd: root, hook_event_name: 'Stop' }, env)
+
+    // Move head so the second Stop is a real delta rather than a no-op.
+    writeFileSync(join(root, 'c.txt'), 'c')
+    exec(root, 'git', ['add', '.'])
+    exec(root, 'git', ['commit', '-m', 'third'])
+
+    decide('ls three')
+    runHook('stop', root, { session_id: 's1', cwd: root, hook_event_name: 'Stop' }, env)
+
+    const emits = readFileSync(logPath, 'utf8')
+      .split('\n')
+      .filter((l) => l !== '')
+      .map((l) => asRecord(JSON.parse(l)))
+    expect(emits).toHaveLength(2)
+    const body = String(asRecord(JSON.parse(String(emits[1]?.input))).body)
+    // Three decisions exist by now; the second receipt describes only the one its turn produced.
+    expect(body).toContain('**0 allowed, 0 denied, 1 asked**')
+    expect(body).not.toContain('3 asked')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('8. stop is idempotent when state is unchanged', () => {
   const root = makeRepo()
   try {

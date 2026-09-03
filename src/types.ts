@@ -82,6 +82,8 @@ export type EmittedState = {
   blockers: string[]
   checksFingerprint: string
   commentId: string
+  /** How many decisions the log held at this emit, so the next receipt counts only what came after. */
+  decisionOffset?: number
 }
 
 export type PolicyAllowRule = {

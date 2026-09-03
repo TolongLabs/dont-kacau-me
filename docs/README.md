@@ -272,7 +272,14 @@ opt-in, and nothing runs in the background when you are not running it.
    bun install
    ```
 
-1. Load the repository as a local Claude Code plugin for the session:
+1. Install it as a plugin. From the clone, the trailing slash matters — a bare `.` is rejected:
+
+   ```bash
+   claude plugin marketplace add ./
+   claude plugin install dont-kacau-me@tolonglabs
+   ```
+
+   To try it for one session without installing anything, load the directory instead:
 
    ```bash
    claude --plugin-dir /absolute/path/to/dont-kacau-me

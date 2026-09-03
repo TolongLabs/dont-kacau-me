@@ -28,8 +28,11 @@ messages delivered.
 Two costs fall on the human, and both scale with how well the agents work.
 
 **Courier duty.** An agent finishes. Its developer summarises that by hand for teammates, and pastes teammates' progress
-back into their own agents. Every hop loses provenance: by the time a fact reaches a second agent it is prose, detached
-from the commit it was true at, and no longer checkable.
+back into their own agents. Every hop loses provenance. By the time a fact reaches a second agent it is:
+
+- prose
+- detached from the commit it was true at
+- no longer checkable
 
 **Decision queue.** Sessions pause for the human. Three agents blocking on one person serialises all of them on that
 person's attention, and the person becomes the slowest component in their own workflow. Worse, the human is often not
@@ -76,11 +79,13 @@ in that installer's own sessions, and it writes down every call it makes.
 
 ## Scope ladder
 
-| Rung   | Delivers                                                                                |
-| ------ | --------------------------------------------------------------------------------------- |
-| **v1** | Receipts, three tracking tiers, the policy-driven decision engine, the decision log     |
-| **v2** | Live mid-turn delivery, which needs a supervised watch or cross-session messaging       |
-| **v3** | Cross-machine propagation beyond what GitHub carries, and a precedent store that learns |
+- **v1** —
+  - Receipts
+  - three tracking tiers
+  - the policy-driven decision engine
+  - the decision log
+- **v2** — Live mid-turn delivery, which needs a supervised watch or cross-session messaging
+- **v3** — Cross-machine propagation beyond what GitHub carries, and a precedent store that learns
 
 v1 is the whole product for one developer with several worktrees. Everything above it is an expansion.
 

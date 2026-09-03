@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { fetchChecks, fetchSince, findReceiptComment, resolveWorkItem, runner, upsertReceiptComment } from './github'
+import {
+  fetchChecks,
+  fetchSince,
+  findReceiptComment,
+  resolveWorkItem,
+  runner,
+  upsertReceiptComment,
+  workItemByNumber
+} from './github'
 import type { WorkItemRef } from './types'
 
 type RunResult = ReturnType<typeof runner.run>
@@ -321,5 +329,37 @@ describe('fetchSince', () => {
     if (event) {
       expect(event).not.toHaveProperty('body')
     }
+  })
+})
+
+describe('workItemByNumber', () => {
+  it('resolves an issue and pairs it with the repository node id', () => {
+    queue(
+      { ok: true, stdout: JSON.stringify({ id: 'I_9', number: 9, isPr: false }), stderr: '' },
+      { ok: true, stdout: 'R_1\n', stderr: '' }
+    )
+    expect(workItemByNumber('/repo', 9)).toEqual({ repoNodeId: 'R_1', itemNodeId: 'I_9', number: 9, kind: 'issue' })
+  })
+
+  it('marks a pull request as kind pr', () => {
+    queue(
+      { ok: true, stdout: JSON.stringify({ id: 'PR_9', number: 9, isPr: true }), stderr: '' },
+      { ok: true, stdout: 'R_1', stderr: '' }
+    )
+    expect(workItemByNumber('/repo', 9)?.kind).toBe('pr')
+  })
+
+  it('returns null on a failed lookup, malformed json, or a missing repository id', () => {
+    queue({ ok: false, stdout: '', stderr: 'not found' })
+    expect(workItemByNumber('/repo', 9)).toBeNull()
+
+    queue({ ok: true, stdout: '{{{', stderr: '' })
+    expect(workItemByNumber('/repo', 9)).toBeNull()
+
+    queue(
+      { ok: true, stdout: JSON.stringify({ id: 'I_9', number: 9, isPr: false }), stderr: '' },
+      { ok: true, stdout: '', stderr: '' }
+    )
+    expect(workItemByNumber('/repo', 9)).toBeNull()
   })
 })

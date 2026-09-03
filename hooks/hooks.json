@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/permission-request.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/permission-request.ts\"",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}\"/src/hooks/permission-request.ts",
             "timeout": 5,
             "statusMessage": "Applying your DKM policy"
           }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/stop.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/stop.ts\"",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}\"/src/hooks/stop.ts",
             "timeout": 20,
             "statusMessage": "Updating the receipt"
           }
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/session-start.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/session-start.ts\"",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}\"/src/hooks/session-start.ts",
             "timeout": 15,
             "statusMessage": "Collecting what changed while you were away"
           }
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/user-prompt-submit.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/user-prompt-submit.ts\"",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}\"/src/hooks/user-prompt-submit.ts",
             "timeout": 15,
             "statusMessage": "Checking followed work items"
           }
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/worktree-create.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/worktree-create.ts\"",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}\"/src/hooks/worktree-create.ts",
             "timeout": 10,
             "statusMessage": "Binding the worktree"
           }
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/worktree-remove.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/worktree-remove.ts\"",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}\"/src/hooks/worktree-remove.ts",
             "timeout": 10,
             "statusMessage": "Releasing the binding"
           }

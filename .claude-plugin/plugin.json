@@ -1,0 +1,10 @@
+{
+  "name": "dont-kacau-me",
+  "description": "Carries verified work context between developers' agent fleets, and decides on your behalf from a policy you wrote",
+  "version": "0.1.0",
+  "author": { "name": "TolongLabs" },
+  "homepage": "https://github.com/TolongLabs/dont-kacau-me",
+  "repository": "https://github.com/TolongLabs/dont-kacau-me",
+  "license": "MIT",
+  "keywords": ["agents", "coordination", "github", "receipts", "permissions", "worktrees"]
+}

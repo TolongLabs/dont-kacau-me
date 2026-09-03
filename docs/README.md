@@ -7,7 +7,7 @@
 ![Biome](https://img.shields.io/badge/Biome-lint_%26_format-60A5FA?logo=biome&logoColor=white)
 ![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757)
 ![MIT licence](https://img.shields.io/badge/licence-MIT-blue)
-![Version](https://img.shields.io/badge/version-0.2.0-informational)
+![Version](https://img.shields.io/badge/version-0.3.0-informational)
 
 Verified work context between developers' agent fleets, and policy-backed answers inside the installer's own sessions.
 No human courier. No human decision queue. No manufactured consent.

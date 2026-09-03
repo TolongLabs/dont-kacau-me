@@ -8,6 +8,17 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-04
+
+Closes every issue that was open at 0.2.0.
+
+### Added
+
+- Ingest measures its own wall clock and stops fetching past a budget, defaulting to 8s, after which events arrive as
+  headlines. A receipt is fetched once per ingest however many worktrees receive it. Measured against a live repository:
+  a cursored issue fetch of 30 items takes 0.78–1.27s and a single comment fetch 0.42–1.01s, against a 15s hook timeout
+  ([#4])
+
 ### Fixed
 
 - Delivery is now per recipient. `.dkm/pending/` is one queue per worktree and the tracking tier is resolved for the
@@ -68,9 +79,11 @@ contracts at once.
 Initial implementation: the receipt, the decision engine, the hook bundle, the CLI, plugin packaging and CI. Verified
 against a fake `gh` in a test harness only.
 
-[unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.2.0...HEAD
+[unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TolongLabs/dont-kacau-me/releases/tag/v0.1.0
+[#4]: https://github.com/TolongLabs/dont-kacau-me/issues/4
 [#6]: https://github.com/TolongLabs/dont-kacau-me/issues/6
 [#9]: https://github.com/TolongLabs/dont-kacau-me/issues/9
 [#10]: https://github.com/TolongLabs/dont-kacau-me/issues/10

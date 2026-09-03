@@ -117,7 +117,7 @@ DKM is a Claude Code hook bundle with no daemon. Every moving part starts on a h
 or `gh` operation, writes any state under `.dkm/`, and exits. Nothing runs between firings, and the hot path never calls
 a model.
 
-<!-- DIAGRAM-SLOT: architecture -->
+![DKM architecture: two worktrees feed a bundle of short-lived hooks, which read and write one shared .dkm store, publish receipts to a GitHub work item and reach the human only for what policy did not answer](assets/architecture.svg)
 
 This section stays at the system-narrative level. Hook contracts, data models, schemas and rationale live in
 [the technical reference](TRD.md).
@@ -163,7 +163,7 @@ it carries meaning; a repository-wide commit feed is unactionable noise.
 
 ### The receipt schema
 
-<!-- DIAGRAM-SLOT: receipt-flow -->
+![Receipt flow: session A finishes a turn, the Stop hook measures the repository and writes a receipt only when something changed, and session B pulls that delta into its context on its next start or prompt](assets/receipt-flow.svg)
 
 One GitHub comment per work item is edited in place, never appended to. Every field has one of three kinds, keeping
 measured fact structurally separate from agent narrative.

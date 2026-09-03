@@ -62,7 +62,6 @@ Every hook receives the standard payload on stdin, including `session_id`, `cwd`
 | `SessionStart`      | `cwd`                 | Drain `.dkm/pending/`, write to stdout so it reaches the model   |
 | `UserPromptSubmit`  | `cwd`                 | Fetch since cursor, drain pending, write to stdout               |
 | `PermissionRequest` | tool name, tool input | Return `decision` of `allow`, `deny` or `ask`                    |
-| `Notification`      | `type`                | Local telemetry only. Never a control decision                   |
 
 **`PermissionRequest` output.** Exit code 2 is ignored by this event; the decision must be in the payload.
 

@@ -1,0 +1,45 @@
+name: Bug report
+description: Something DKM did, or failed to do, in a real session
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For anything security-shaped, use private reporting instead. See `SECURITY.md`.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What DKM did, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The smallest sequence that shows it. A worktree layout and a policy excerpt help.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        Paste the error verbatim. The most useful artefact is Claude Code's own hook log:
+        `claude --debug hooks --debug-file /tmp/dkm.log ...` then the lines mentioning the hook.
+        Relevant lines from `.dkm/decisions.jsonl` also help. Redact anything private first.
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `claude --version`, `bun --version`, and the DKM version from `.claude-plugin/plugin.json`.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I confirmed this in a real Claude Code session, not only from reading the code
+        - label: This is not a report that my own `.dkm/policy.toml` granted more than I intended

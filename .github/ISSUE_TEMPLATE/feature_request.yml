@@ -1,0 +1,38 @@
+name: Proposal
+description: A change to what DKM does
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What goes wrong today. Describe the situation, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+  - type: textarea
+    id: authority
+    attributes:
+      label: Effect on the authority principle
+      description: |
+        "Auto-answering may execute an existing decision. It must never manufacture intent or consent."
+        Does this proposal create any path from something DKM ingests to a permission decision? If not, say so.
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which scope tier does this belong to
+      description: See the scope ladder in docs/PRODUCT.md.
+      options:
+        - v1 — provenance and policy-backed decisions
+        - v2 — live mid-turn delivery
+        - v3 — cross-machine, learning precedent
+        - Not sure
+    validations:
+      required: true

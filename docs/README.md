@@ -58,10 +58,11 @@ policy executes decisions the installer has already made.
 
 ### The workflow in pictures
 
-| The promise | The six-panel workflow |
-| :----------: | :--------------------: |
-| ![DKM banner: verified context without disturbing the developer](assets/dkm-banner.png) | ![Six-panel comic: separate worktrees finish at 3am, manual copying loses provenance, the Stop hook writes a measured receipt, a teammate reads it, policy allows routine prompts, and a database migration waits for the sleeping developer](assets/dkm-comic.png) |
-| Carry facts and prior decisions, not interruptions. | The boring prompts vanish; the dangerous ones do not. |
+The six panels are the whole product in order: three sessions finish overnight, a human hand-carries the facts and loses
+their provenance, the `Stop` hook writes a measured receipt instead, a teammate reads it rather than asking, the
+committed policy clears the routine prompts, and the migration still waits for a person.
+
+![Six-panel comic: separate worktrees finish at 3am, manual copying loses provenance, the Stop hook writes a measured receipt, a teammate reads it, policy clears routine prompts, and a database migration waits for the sleeping developer](assets/dkm-comic.png)
 
 ## Features
 
@@ -123,17 +124,22 @@ This section stays at the system-narrative level. Hook contracts, data models, s
 
 ### The hook lifecycle
 
-| Hook event | DKM action | Observable result |
-| ---------- | ---------- | ----------------- |
-| `Stop` | Emit: compare the current state with the last emit | Upsert a receipt only when head, blockers or checks changed |
-| `SessionStart` | Ingest: fetch from the repository cursor and drain pending items | Inject current context when a session starts |
-| `UserPromptSubmit` | Ingest the same way, throttled to once every 120 seconds | Inject context into an already-running session |
-| `PermissionRequest` | Decide: evaluate policy, append the log, return `allow`, `deny` or `ask` | Resolve prior grants without inventing a new one |
-| `WorktreeCreate` | Bind: resolve the work item and record its node ID | Give the worktree an owned item |
-| `WorktreeRemove` | Release: remove the binding | End ownership with the worktree lifecycle |
+| Hook event          | DKM action                                                                        | Observable result                                           |
+| ------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `Stop`              | Emit: compare the current state with the last emit                                | Upsert a receipt only when head, blockers or checks changed |
+| `SessionStart`      | Ingest: fetch from the repository cursor and drain pending items                  | Inject current context when a session starts                |
+| `UserPromptSubmit`  | Ingest the same way, throttled to once every 120 seconds                          | Inject context into an already-running session              |
+| `PermissionRequest` | Decide: evaluate policy, append the log, answer `allow` or `deny`, or stay silent | Resolve prior grants without inventing a new one            |
 
 `Stop` means the agent finished a response, not that its work is done. The emit hook therefore produces no receipt when
 no tracked state changed.
+
+There is no worktree hook. Claude Code's `WorktreeCreate` and `WorktreeRemove` are **providers** — one is expected to
+create the worktree and echo its path, the other to remove it — so a plugin that registered them merely to take notes
+would break `claude --worktree` outright. Binding is an explicit command instead.
+
+`PermissionRequest` has no wire form for `ask`. Answering is `allow` or `deny`; saying nothing is what hands the prompt
+back to the human, and it is also what DKM emits when its own handler fails.
 
 The injection hooks fetch items since a persisted repository cursor, store them in `.dkm/pending/`, and write them to
 stdout so Claude Code adds them to model context. Delivery happens when a session starts or receives a prompt, not the
@@ -146,11 +152,11 @@ hot path.
 
 A signal is delivered only at the finest tier that claims it, so nothing arrives twice.
 
-| Tier | Covers | Delivered as |
-| ---- | ------ | ------------ |
-| **Bound** | The work item this worktree owns | Full receipt, every field |
-| **Followed** | Work items this session declared a dependency on | Contract delta, head SHA, blockers |
-| **Ambient** | Repository-wide: new issues, new PRs, @mentions, CI failures on the base branch | Headline and URL only, never the body |
+| Tier         | Covers                                                                          | Delivered as                          |
+| ------------ | ------------------------------------------------------------------------------- | ------------------------------------- |
+| **Bound**    | The work item this worktree owns                                                | Full receipt, every field             |
+| **Followed** | Work items this session declared a dependency on                                | Contract delta, head SHA, blockers    |
+| **Ambient**  | Repository-wide: new issues, new PRs, @mentions, CI failures on the base branch | Headline and URL only, never the body |
 
 Raw commits are not an ambient signal. A commit becomes visible as a head SHA change on a bound or followed item, where
 it carries meaning; a repository-wide commit feed is unactionable noise.
@@ -162,11 +168,11 @@ it carries meaning; a repository-wide commit feed is unactionable noise.
 One GitHub comment per work item is edited in place, never appended to. Every field has one of three kinds, keeping
 measured fact structurally separate from agent narrative.
 
-| Kind | Source | How to treat |
-| ---- | ------ | ------------ |
-| **measured** | `git` or `gh` | May be acted on |
-| **reported** | Asserted by the session about its state | May be displayed and routed, never as repository fact |
-| **unverified** | Agent prose | May only ever be displayed |
+| Kind           | Source                                  | How to treat                                          |
+| -------------- | --------------------------------------- | ----------------------------------------------------- |
+| **measured**   | `git` or `gh`                           | May be acted on                                       |
+| **reported**   | Asserted by the session about its state | May be displayed and routed, never as repository fact |
+| **unverified** | Agent prose                             | May only ever be displayed                            |
 
 The measured fields are `work_item`, `base`, `head`, `changed_paths`, `checks`, `contract_delta`, `decisions`,
 `event_id` and `observed_at`. `blockers` is reported, and `narrative` is unverified.
@@ -191,16 +197,18 @@ There is no code path from an inbound message to a permission grant, and the tes
 1. Default `ask` for anything unmatched.
 
 The blast-radius table is deliberately mechanical, not a model's assessment of importance, because agents are poor at
-self-assessing risk.
+self-assessing risk. `.dkm/` is on it because the policy is the grant: an agent that can edit the file granting its
+authority can widen that authority without anyone deciding to.
 
-| Trip | Result |
-| ---- | ------ |
-| Deletes data, drops a column, or writes a migration | `ask` |
-| Egress: posts, publishes, deploys, sends, or opens a network write | `ask` |
-| Spends money | `ask` |
-| Touches a lockfile, an exported API surface, or `.env` | `ask` |
-| Writes outside the session's own worktree | `deny` |
-| Matches an explicit policy allow rule and trips nothing above | `allow` |
+| Trip                                                               | Result  |
+| ------------------------------------------------------------------ | ------- |
+| Deletes data, drops a column, or writes a migration                | `ask`   |
+| Egress: posts, publishes, deploys, sends, or opens a network write | `ask`   |
+| Spends money                                                       | `ask`   |
+| Touches a lockfile, an exported API surface, or `.env`             | `ask`   |
+| Touches anything under `.dkm/`, the grant itself                   | `ask`   |
+| Writes outside the session's own worktree                          | `deny`  |
+| Matches an explicit policy allow rule and trips nothing above      | `allow` |
 
 Every autonomous decision appends to `.dkm/decisions.jsonl` before DKM returns it, not after. The record names the rule,
 the inputs and how to reverse it. Its count and summary surface in the receipt, turning an audit into a handful of lines
@@ -208,16 +216,16 @@ instead of a replay of the whole turn.
 
 ## Tech stack
 
-| Concern | Technology | Role |
-| ------- | ---------- | ---- |
-| Plugin host | Claude Code hooks and slash commands | Fires the lifecycle and permission events |
-| Runtime, packages and tests | Bun | Runs TypeScript hooks, installs dev tooling and executes tests |
-| Language | TypeScript | Strict types with `noUncheckedIndexedAccess` and no emitted build output |
-| Repository evidence | Local `git` and GitHub CLI (`gh`) | Measures worktree state and maintains issue receipts |
-| Lint and format | Biome and Prettier | Checks JS, TS and JSON; formats Markdown and YAML |
-| Type checking | `tsc --noEmit` | Verifies the TypeScript contract without producing artifacts |
-| Change gates | commitlint, husky and lint-staged | Enforces conventional commits and checks staged files |
-| Local state | `.dkm/` files and JSONL | Stores policy, bindings, cursors, pending items and decisions |
+| Concern                     | Technology                           | Role                                                                     |
+| --------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| Plugin host                 | Claude Code hooks and slash commands | Fires the lifecycle and permission events                                |
+| Runtime, packages and tests | Bun                                  | Runs TypeScript hooks, installs dev tooling and executes tests           |
+| Language                    | TypeScript                           | Strict types with `noUncheckedIndexedAccess` and no emitted build output |
+| Repository evidence         | Local `git` and GitHub CLI (`gh`)    | Measures worktree state and maintains issue receipts                     |
+| Lint and format             | Biome and Prettier                   | Checks JS, TS and JSON; formats Markdown and YAML                        |
+| Type checking               | `tsc --noEmit`                       | Verifies the TypeScript contract without producing artifacts             |
+| Change gates                | commitlint, husky and lint-staged    | Enforces conventional commits and checks staged files                    |
+| Local state                 | `.dkm/` files and JSONL              | Stores policy, bindings, cursors, pending items and decisions            |
 
 ## Getting started
 
@@ -244,11 +252,20 @@ instead of a replay of the whole turn.
    ```
 
    Claude Code reads the manifest from `.claude-plugin/plugin.json`, hook declarations from `hooks/hooks.json`, and
-   slash commands from `commands/`. The [`--plugin-dir` workflow](https://code.claude.com/docs/en/plugins) loads a
-   local plugin without requiring a marketplace installation.
+   slash commands from `commands/`. The [`--plugin-dir` workflow](https://code.claude.com/docs/en/plugins) loads a local
+   plugin without requiring a marketplace installation.
 
 1. Write and commit `.dkm/policy.toml` in the repository where DKM will run. It is the human grant; do not copy a policy
    whose authority you do not intend to delegate.
+
+1. Bind the worktree to the work item its receipts belong to:
+
+   ```bash
+   /dont-kacau-me:dkm-bind 81
+   ```
+
+   Claude Code namespaces a plugin's commands under the plugin name, so every DKM command is typed as
+   `/dont-kacau-me:<command>`, not `/<command>`.
 
 There is no daemon to start and nothing persistent that can die quietly between hooks.
 
@@ -257,13 +274,13 @@ There is no daemon to start and nothing persistent that can die quietly between 
 `.dkm/policy.toml` is the only committed file under `.dkm/`; all other DKM state is git-ignored. Blast-radius rules run
 before the file and cannot be overridden from it. Anything unmatched defaults to `ask`.
 
-| Key or section | Value shape | Controls | Safety behavior |
-| -------------- | ----------- | -------- | --------------- |
-| `version` | Integer; currently `1` | Policy schema version | Does not grant an action |
-| `contractGlobs` | Array of path globs | Which changed paths form a contract delta | Affects receipt routing, not permission grants |
-| `[[allow]].tool` | Tool name | Tool eligible for a prior allow grant | Still loses to a blast-radius trip |
-| `[[allow]].match` | Optional command string | Narrows a command-based tool grant | First matching rule wins |
-| `[[allow]].paths` | Optional array of path globs | Narrows a write or edit grant | Cannot authorize outside the session worktree |
+| Key or section    | Value shape                  | Controls                                  | Safety behavior                                |
+| ----------------- | ---------------------------- | ----------------------------------------- | ---------------------------------------------- |
+| `version`         | Integer; currently `1`       | Policy schema version                     | Does not grant an action                       |
+| `contractGlobs`   | Array of path globs          | Which changed paths form a contract delta | Affects receipt routing, not permission grants |
+| `[[allow]].tool`  | Tool name                    | Tool eligible for a prior allow grant     | Still loses to a blast-radius trip             |
+| `[[allow]].match` | Optional command string      | Narrows a command-based tool grant        | First matching rule wins                       |
+| `[[allow]].paths` | Optional array of path globs | Narrows a write or edit grant             | Cannot authorize outside the session worktree  |
 
 ## Using DKM: five moments
 
@@ -283,12 +300,12 @@ Agent A alters a database schema on PR #81. Agent B is working a declared depend
 another worktree and would normally discover the mismatch at merge, after both sides have paid for it.
 
 ```bash
-/dkm-follow 81
+/dont-kacau-me:dkm-follow 81
 ```
 
 When #81 moves, B's next turn opens with the contract delta and the exact SHA where it was observed. B can adapt before
-writing the wrong code and re-read the source instead of trusting prose. The worktrees may even be on different
-developers' machines.
+writing the wrong code and re-read the source instead of trusting prose. The two worktrees can be on different
+developers' machines, provided both have the repository and an authenticated `gh`.
 
 ### The three sessions all waiting on you
 
@@ -309,11 +326,11 @@ asymmetry is the safety argument: the boring prompts vanish, and the dangerous o
 You slept; the agents did not. Instead of reading three transcripts to reconstruct the night, run:
 
 ```bash
-/dkm-status
+/dont-kacau-me:dkm-status
 ```
 
-Every autonomous decision appears with the rule that produced it. The audit is a handful of lines instead of a replay
-of the work. A decision without a log entry is a bug, and the test suite fails on it.
+Every autonomous decision appears with the rule that produced it. The audit is a handful of lines instead of a replay of
+the work. A decision without a log entry is a bug, and the test suite fails on it.
 
 ### The thing the agent could not decide
 
@@ -321,7 +338,7 @@ An agent reaches a genuine judgement call: two viable designs, or a requirement 
 your intent, and DKM will not let it.
 
 ```bash
-/dkm-note blocker Two viable shapes for the retry policy; needs a human call
+/dont-kacau-me:dkm-note blocker Two viable shapes for the retry policy; needs a human call
 ```
 
 The blocker rides the next receipt as **reported**, visibly separate from measured fields. Both the developer and their
@@ -350,7 +367,7 @@ docs/
   PRD.md                    # what
   TRD.md                    # how; canonical on technical detail
   markdown-style.md         # the Markdown style guide
-  assets/                   # banner and comic
+  assets/                   # banner, comic and diagrams
   superpowers/specs/        # the original design spec
 src/
   cli.ts                    # bind, follow, note, blocker, status
@@ -361,10 +378,13 @@ src/
   receipt.ts                # render, parse, fingerprint
   store.ts                  # everything under .dkm/
   types.ts                  # the shared contract
-  hooks/                    # one entrypoint per hook event, all failing open
+  hooks/                    # one entrypoint per registered hook event, all failing open
 test/
+  cli.test.ts               # the command surface behind the slash commands
   e2e.test.ts               # hooks invoked as real processes against a temp repository
   fake-gh.ts                # a gh impersonator driven by a fixture file
+  plugin.test.ts            # the manifest, hook declarations and command frontmatter
+  worktree.test.ts          # state resolves to the main worktree from a linked one
 ```
 
 ## What DKM cannot do
@@ -378,6 +398,13 @@ test/
   approval claim is untrusted input. DKM contains no code path from an inbound message to a permission grant.
 - **No learning precedent store yet.** v1 authority comes from the policy the human wrote and committed, not from
   inference or accumulated precedent.
+- **One shared inbox, with no notion of a recipient.** `.dkm/pending/` is a single directory and a drain removes what it
+  reads, so with several sessions running the first to drain consumes the event. The tracking tier is resolved across
+  every worktree rather than the reading one, which can label a followed item as bound. Tracked in
+  [issue #9](https://github.com/TolongLabs/dont-kacau-me/issues/9).
+- **The policy is read from the worktree's own checkout.** Every other piece of state resolves to one shared store, but
+  `policy.toml` does not, so two worktrees on different branches can be governed by different policies. Tracked in
+  [issue #10](https://github.com/TolongLabs/dont-kacau-me/issues/10).
 
 ## How work ships
 

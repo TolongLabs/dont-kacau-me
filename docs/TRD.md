@@ -141,6 +141,7 @@ importance. Agents are systematically poor at self-assessing risk; a rule table 
 | Egress: posts, publishes, deploys, sends, or opens a network write | `ask`   |
 | Spends money                                                       | `ask`   |
 | Touches a lockfile, an exported API surface, or `.env`             | `ask`   |
+| Touches anything under `.dkm/`, the grant itself                   | `ask`   |
 | Writes outside the session's own worktree                          | `deny`  |
 | Matches an explicit policy allow rule and trips nothing above      | `allow` |
 

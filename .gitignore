@@ -1,5 +1,8 @@
 node_modules
 dist
 .env
-.dkm
 *.log
+
+# Machine state is disposable; policy.toml is the human grant and is committed.
+.dkm/*
+!.dkm/policy.toml

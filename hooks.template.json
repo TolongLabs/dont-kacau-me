@@ -1,0 +1,77 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/permission-request.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/permission-request.ts\"",
+            "timeout": 5,
+            "statusMessage": "Applying your DKM policy"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/stop.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/stop.ts\"",
+            "timeout": 20,
+            "statusMessage": "Updating the receipt"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/session-start.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/session-start.ts\"",
+            "timeout": 15,
+            "statusMessage": "Collecting what changed while you were away"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/user-prompt-submit.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/user-prompt-submit.ts\"",
+            "timeout": 15,
+            "statusMessage": "Checking followed work items"
+          }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/worktree-create.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/worktree-create.ts\"",
+            "timeout": 10,
+            "statusMessage": "Binding the worktree"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/src/hooks/worktree-remove.ts\" ] || bun \"${CLAUDE_PROJECT_DIR}/src/hooks/worktree-remove.ts\"",
+            "timeout": 10,
+            "statusMessage": "Releasing the binding"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -2,8 +2,8 @@
 
 Status: **draft, pending review.** No implementation until this is approved.
 
-`dont-kacau-me` (DKM) carries verified work context between the agent fleets of different developers, so that
-neither human has to act as a courier.
+`dont-kacau-me` (DKM) carries verified work context between the agent fleets of different developers, so that neither
+human has to act as a courier.
 
 Contents:
 
@@ -77,9 +77,9 @@ have declared a dependency on that work item. Provenance: every claim carries th
 
 ## Architecture
 
-**A hook bundle with no daemon**, shipped as a Claude Code plugin. Every moving part is a hook plus files under
-`.dkm/`. There is no long-running process, therefore no process that can die silently and leave a quiet inbox looking
-identical to a healthy one.
+**A hook bundle with no daemon**, shipped as a Claude Code plugin. Every moving part is a hook plus files under `.dkm/`.
+There is no long-running process, therefore no process that can die silently and leave a quiet inbox looking identical
+to a healthy one.
 
 The binding constraint is the hook timeout: everything on the hot path must be a local operation. Reading `git`, reading
 a JSON file and shelling to `gh` for one upsert all qualify. Calling a model does not, which is a further reason v1
@@ -104,8 +104,8 @@ revert, and two sessions cannot corrupt one checkout.
 One GitHub comment per work item, edited in place, never appended to. Its defining property is that **measured fact and
 agent narrative are structurally separated** and a reader can tell at a glance which is which.
 
-Every field carries one of three kinds. **`measured`** is read from `git` or `gh` and may be acted on. **`reported`**
-is asserted by the session about its own state, and may be displayed and routed but never treated as fact about the
+Every field carries one of three kinds. **`measured`** is read from `git` or `gh` and may be acted on. **`reported`** is
+asserted by the session about its own state, and may be displayed and routed but never treated as fact about the
 repository. **`unverified`** is agent prose and may only ever be displayed.
 
 | Field            | Source                                               | Kind           |

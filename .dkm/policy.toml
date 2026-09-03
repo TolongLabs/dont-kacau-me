@@ -1,0 +1,37 @@
+# Don't Kacau Me policy.
+#
+# This file is the human grant. DKM may execute the decisions recorded here on your behalf; it may
+# never invent one. Anything not matched falls through to `ask`, which is exactly today's behaviour.
+#
+# Blast-radius rules always run first and cannot be overridden from here: data loss, egress, spending,
+# lockfile and .env writes all reach you regardless of what you allow below.
+
+version = 1
+
+contractGlobs = ["src/**/schema.ts", "src/**/types.ts", "drizzle/**", "openapi.yaml"]
+
+[[allow]]
+tool = "Read"
+
+[[allow]]
+tool = "Grep"
+
+[[allow]]
+tool = "Bash"
+match = "bun test"
+
+[[allow]]
+tool = "Bash"
+match = "bun run lint"
+
+[[allow]]
+tool = "Bash"
+match = "bun run typecheck"
+
+[[allow]]
+tool = "Write"
+paths = ["src/**", "docs/**"]
+
+[[allow]]
+tool = "Edit"
+paths = ["src/**", "docs/**"]

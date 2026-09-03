@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      # The end-to-end tests build real git repositories and invoke hooks as child
+      # processes, so git needs an identity before they will commit anything.
+      - name: Configure git for the end-to-end fixtures
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+
+      - name: Test
+        run: bun test

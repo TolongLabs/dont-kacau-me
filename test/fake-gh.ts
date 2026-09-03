@@ -22,7 +22,9 @@ function matchPattern(argv: string[]): string | null {
     if (path.endsWith('/comments') && argv.includes('POST')) return 'comment-create'
     if (path.endsWith('/comments')) return 'comment-list'
     if (path.includes('/issues?since=')) return 'issue-list'
+    if (/\/issues\/\d+$/.test(path)) return 'issue-get'
   }
+  if (first === 'repo' && second === 'view') return 'repo-view'
   return null
 }
 

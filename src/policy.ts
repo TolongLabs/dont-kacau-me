@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { dkmPath } from './store'
 import type { Policy, PolicyAllowRule } from './types'
 
 const DEFAULT_POLICY: Policy = { version: 1, allow: [], contractGlobs: [] }
@@ -64,7 +65,10 @@ function parseStringArray(raw: string): string[] {
 
 export function loadPolicy(root: string): Policy {
   try {
-    const text = readFileSync(join(root, '.dkm', 'policy.toml'), 'utf8')
+    // Through dkmPath, not join(root, '.dkm'): in a linked worktree `--show-toplevel` is that
+    // worktree, so reading from it would govern each branch by its own checked-out policy. One
+    // repository has one grant, and a session must not be able to widen its own by switching branch.
+    const text = readFileSync(join(dkmPath(root), 'policy.toml'), 'utf8')
     const policy: Policy = { version: 1, allow: [], contractGlobs: [] }
     let currentRule: PolicyAllowRule | null = null
     for (const rawLine of text.split('\n')) {

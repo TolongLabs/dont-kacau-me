@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renderReceipt } from '../src/receipt'
+import { recipientKey } from '../src/store'
 import type { PendingEvent, Receipt } from '../src/types'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -368,6 +369,64 @@ test('7b. a blocker recorded by the CLI reaches the receipt for that session', (
   }
 })
 
+test("7c. the decision summary counts the turn, not the session's whole lifetime", () => {
+  const root = makeRepo()
+  try {
+    const logPath = join(root, 'gh.log')
+    const env = setupForTest(
+      root,
+      {
+        'issue-get': [{ stdout: boundIssue }],
+        'repo-view': [{ stdout: 'R_1' }],
+        'check-runs': [{ stdout: emptyChecks }, { stdout: emptyChecks }],
+        'comment-list': [{ stdout: emptyComments }, { stdout: existingComment }],
+        'comment-create': [{ stdout: newComment }],
+        'comment-patch': [{ stdout: newComment }]
+      },
+      logPath
+    )
+    bind(root, 42, env)
+
+    const decide = (command: string) =>
+      runHook(
+        'permission-request',
+        root,
+        {
+          session_id: 's1',
+          cwd: root,
+          hook_event_name: 'PermissionRequest',
+          tool_name: 'Bash',
+          tool_input: { command }
+        },
+        env
+      )
+
+    decide('ls one')
+    decide('ls two')
+    runHook('stop', root, { session_id: 's1', cwd: root, hook_event_name: 'Stop' }, env)
+
+    // Move head so the second Stop is a real delta rather than a no-op.
+    writeFileSync(join(root, 'c.txt'), 'c')
+    exec(root, 'git', ['add', '.'])
+    exec(root, 'git', ['commit', '-m', 'third'])
+
+    decide('ls three')
+    runHook('stop', root, { session_id: 's1', cwd: root, hook_event_name: 'Stop' }, env)
+
+    const emits = readFileSync(logPath, 'utf8')
+      .split('\n')
+      .filter((l) => l !== '')
+      .map((l) => asRecord(JSON.parse(l)))
+    expect(emits).toHaveLength(2)
+    const body = String(asRecord(JSON.parse(String(emits[1]?.input))).body)
+    // Three decisions exist by now; the second receipt describes only the one its turn produced.
+    expect(body).toContain('**0 allowed, 0 denied, 1 asked**')
+    expect(body).not.toContain('3 asked')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('8. stop is idempotent when state is unchanged', () => {
   const root = makeRepo()
   try {
@@ -439,14 +498,15 @@ test('10. session-start drains pending events', () => {
       url: 'https://github.com/owner/repo/issues/1',
       receipt: null
     }
-    mkdirSync(join(root, '.dkm', 'pending'), { recursive: true })
-    writeFileSync(join(root, '.dkm', 'pending', 'ev1.json'), JSON.stringify(pending))
+    const inbox = join(root, '.dkm', 'pending', recipientKey(root))
+    mkdirSync(inbox, { recursive: true })
+    writeFileSync(join(inbox, 'ev1.json'), JSON.stringify(pending))
     const env = setupForTest(root, {})
     const r = runHook('session-start', root, { session_id: 's1', cwd: root, hook_event_name: 'SessionStart' }, env)
     expect(r.status).toBe(0)
     expect(r.stdout).toContain('Example issue')
     expect(r.stdout).toContain('https://github.com/owner/repo/issues/1')
-    expect(readdirSync(join(root, '.dkm', 'pending'))).toEqual([])
+    expect(readdirSync(inbox)).toEqual([])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -519,6 +579,54 @@ test('12. session-end leaves a ticket naming the session that just ended', () =>
     // The reason is recorded as the harness gave it. A hook cannot tell a usage limit from a clean
     // exit, and guessing at one is how a supervisor would resume a session nobody wanted resumed.
     expect(ticket.reason).toBe('other')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('10c. one event reaches every worktree, each at the tier that worktree sees', () => {
+  const root = makeRepo()
+  try {
+    mkdirSync(join(root, '.dkm'), { recursive: true })
+    const other = '/elsewhere/worktree-b'
+    const item = { repoNodeId: 'R_1', itemNodeId: 'I_7', number: 7, kind: 'issue' as const }
+    // A owns #7; B declared a dependency on it. The same event is bound for one and followed for
+    // the other, and a single shared queue could represent only one of those answers.
+    writeFileSync(
+      join(root, '.dkm', 'bindings.json'),
+      JSON.stringify({
+        version: 1,
+        bindings: [
+          { worktreePath: root, bound: item, followed: [], ambient: true },
+          { worktreePath: other, bound: null, followed: [item], ambient: true }
+        ]
+      })
+    )
+    const issueList = JSON.stringify([
+      {
+        node_id: 'I_7',
+        number: 7,
+        title: 'Contract owner',
+        html_url: 'https://github.com/owner/repo/issues/7',
+        updated_at: '2026-09-03T02:00:00Z'
+      }
+    ])
+    const env = setupForTest(root, {
+      'issue-list': [{ stdout: issueList }],
+      'comment-list': [{ stdout: emptyComments }, { stdout: emptyComments }]
+    })
+
+    const r = runHook('session-start', root, { session_id: 's1', cwd: root, hook_event_name: 'SessionStart' }, env)
+    expect(r.status).toBe(0)
+    // A drained its own inbox and was told it owns the item.
+    expect(r.stdout).toContain('bound:')
+
+    // B's copy is still waiting, and is labelled followed rather than bound.
+    const inboxB = join(root, '.dkm', 'pending', recipientKey(other))
+    const files = readdirSync(inboxB)
+    expect(files).toHaveLength(1)
+    const queued = asRecord(JSON.parse(readFileSync(join(inboxB, files[0] ?? ''), 'utf8')))
+    expect(queued.tier).toBe('followed')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

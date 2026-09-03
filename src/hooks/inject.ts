@@ -1,6 +1,6 @@
 import { fetchSince, findReceiptComment } from '../github'
 import { parseReceipt } from '../receipt'
-import { drainPending, readBindings, readCursors, writeCursors, writePending } from '../store'
+import { drainPending, readBindings, readCursors, recipientKey, writeCursors, writePending } from '../store'
 import type { PendingEvent, Receipt, TrackingTier, WorkItemRef } from '../types'
 
 function short(sha: string): string {
@@ -41,54 +41,96 @@ export function render(events: PendingEvent[]): string {
   return `${out.join('\n')}\n`
 }
 
-function trackedRepos(root: string): Map<string, { tier: TrackingTier; item: WorkItemRef }[]> {
-  const map = new Map<string, { tier: TrackingTier; item: WorkItemRef }[]>()
-  for (const b of readBindings(root).bindings) {
-    const add = (tier: TrackingTier, item: WorkItemRef) => {
-      const list = map.get(item.repoNodeId) ?? []
-      list.push({ tier, item })
-      map.set(item.repoNodeId, list)
-    }
-    if (b.bound !== null) add('bound', b.bound)
-    for (const f of b.followed) add('followed', f)
+type Recipient = { worktreePath: string; bound: WorkItemRef | null; followed: WorkItemRef[]; ambient: boolean }
+
+/**
+ * One entry per worktree, never a flattened map. The tier of an item depends on who is asking:
+ * the worktree that owns #81 is bound to it, and a worktree that declared a dependency on it is
+ * following it. Resolving that globally told a following session it was bound, because the answer
+ * came from whichever binding happened to be first in the file.
+ */
+function recipients(root: string): Recipient[] {
+  return readBindings(root).bindings.map((b) => ({
+    worktreePath: b.worktreePath,
+    bound: b.bound,
+    followed: b.followed,
+    ambient: b.ambient
+  }))
+}
+
+function tierFor(recipient: Recipient, nodeId: string): { tier: TrackingTier; item: WorkItemRef } | null {
+  if (recipient.bound !== null && recipient.bound.itemNodeId === nodeId) {
+    return { tier: 'bound', item: recipient.bound }
   }
-  return map
+  const followed = recipient.followed.find((f) => f.itemNodeId === nodeId)
+  if (followed !== undefined) return { tier: 'followed', item: followed }
+  return null
+}
+
+function trackedRepoIds(recipients: Recipient[]): string[] {
+  const ids = new Set<string>()
+  for (const r of recipients) {
+    if (r.bound !== null) ids.add(r.bound.repoNodeId)
+    for (const f of r.followed) ids.add(f.repoNodeId)
+  }
+  return [...ids]
 }
 
 /**
  * Only a bound or followed item is worth a second `gh` call. Ambient is a headline and a URL by
  * definition, and without this a followed item would arrive as one too — never the contract delta
  * and head SHA that are the whole reason to follow something.
+ *
+ * Memoised across one ingest because the same item's receipt is identical for every recipient, and
+ * queueing per worktree would otherwise multiply one fetch by the number of worktrees. Measured at
+ * roughly 1s per `gh` call against a live repository, which the 15s hook timeout does not forgive
+ * many times over.
  */
-function receiptFor(root: string, item: WorkItemRef): Receipt | null {
+function receiptFor(root: string, item: WorkItemRef, cache: Map<string, Receipt | null>): Receipt | null {
+  const hit = cache.get(item.itemNodeId)
+  if (hit !== undefined) return hit
   const comment = findReceiptComment(root, item)
-  if (comment === null) return null
-  return parseReceipt(comment.body)
+  const receipt = comment === null ? null : parseReceipt(comment.body)
+  cache.set(item.itemNodeId, receipt)
+  return receipt
 }
 
 /**
  * `minIntervalMs` exists because UserPromptSubmit fires on every turn. Fetching there unthrottled
  * would put a network call on the hot path of every prompt the human types.
  */
-export function ingest(root: string, minIntervalMs = 0): void {
+/**
+ * `budgetMs` is the wall-clock allowance for network work. Past it, ingest stops fetching receipts
+ * and lets the remaining events arrive as headlines: a late delta is worth more than a hook the
+ * harness kills, and draining what is already pending is a local read that always happens.
+ */
+export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: () => number = Date.now): void {
+  const startedAt = now()
+  const receipts = new Map<string, Receipt | null>()
   const cursors = readCursors(root)
-  for (const [repoNodeId, tracked] of trackedRepos(root)) {
+  const all = recipients(root)
+  for (const repoNodeId of trackedRepoIds(all)) {
     const since = cursors.cursors[repoNodeId] ?? new Date(Date.now() - 86_400_000).toISOString()
     if (minIntervalMs > 0 && Date.now() - Date.parse(since) < minIntervalMs) continue
+    if (now() - startedAt > budgetMs) break
     const events = fetchSince(root, since)
     for (const ev of events) {
-      const claimed = tracked.find((t) => t.item.itemNodeId === ev.nodeId)
-      writePending(root, {
-        eventId: ev.nodeId,
-        rootId: ev.nodeId,
-        hops: 0,
-        tier: claimed?.tier ?? 'ambient',
-        workItem: claimed?.item ?? { repoNodeId, itemNodeId: ev.nodeId, number: ev.number, kind: ev.kind },
-        observedAt: ev.updatedAt,
-        headline: ev.headline,
-        url: ev.url,
-        receipt: claimed === undefined ? null : receiptFor(root, claimed.item)
-      })
+      // The same event is queued once per recipient, each with the tier that recipient sees it at.
+      for (const r of all) {
+        const claimed = tierFor(r, ev.nodeId)
+        if (claimed === null && !r.ambient) continue
+        writePending(root, recipientKey(r.worktreePath), {
+          eventId: ev.nodeId,
+          rootId: ev.nodeId,
+          hops: 0,
+          tier: claimed?.tier ?? 'ambient',
+          workItem: claimed?.item ?? { repoNodeId, itemNodeId: ev.nodeId, number: ev.number, kind: ev.kind },
+          observedAt: ev.updatedAt,
+          headline: ev.headline,
+          url: ev.url,
+          receipt: claimed === null || now() - startedAt > budgetMs ? null : receiptFor(root, claimed.item, receipts)
+        })
+      }
     }
     cursors.cursors[repoNodeId] = new Date().toISOString()
   }
@@ -96,5 +138,5 @@ export function ingest(root: string, minIntervalMs = 0): void {
 }
 
 export function drainAndRender(root: string): string {
-  return render(drainPending(root))
+  return render(drainPending(root, recipientKey(root)))
 }

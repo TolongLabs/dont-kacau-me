@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { loadPolicy } from '../src/policy'
 import { readBindings, writeBindings } from '../src/store'
 import type { WorkItemRef } from '../src/types'
 
@@ -65,6 +66,28 @@ test('state is stored once, at the main worktree root', () => {
     writeBindings(linked, { version: 1, bindings: [] })
     expect(existsSync(join(main, '.dkm', 'bindings.json'))).toBe(true)
     expect(existsSync(join(linked, '.dkm', 'bindings.json'))).toBe(false)
+  } finally {
+    cleanup()
+  }
+})
+
+/**
+ * The policy is the human's grant. Reading it from the caller's own checkout let a branch carry its
+ * own rules, which means a session that can commit could widen the authority governing it on its
+ * next turn. One repository, one grant.
+ */
+test('a linked worktree is governed by the repository policy, not its own checkout', () => {
+  const { main, linked, cleanup } = makeRepoWithWorktree()
+  try {
+    mkdirSync(join(main, '.dkm'), { recursive: true })
+    writeFileSync(join(main, '.dkm', 'policy.toml'), '[[allow]]\ntool = "Read"\n')
+    // A policy planted in the linked worktree must not win.
+    mkdirSync(join(linked, '.dkm'), { recursive: true })
+    writeFileSync(join(linked, '.dkm', 'policy.toml'), '[[allow]]\ntool = "Bash"\n[[allow]]\ntool = "Write"\n')
+
+    const policy = loadPolicy(linked)
+    expect(policy.allow).toHaveLength(1)
+    expect(policy.allow[0]?.tool).toBe('Read')
   } finally {
     cleanup()
   }

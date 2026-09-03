@@ -408,6 +408,11 @@ The implementation of each loop:
 state changed. `Stop` means "the agent finished a response", never "the work is done"; emitting on every `Stop` would
 publish noise on a loop.
 
+**The network budget.** `ingest(root, minIntervalMs, budgetMs)` measures its own wall clock. Past the budget it stops
+fetching and the remaining events arrive as headlines, because a late delta is worth more than a hook the harness kills.
+The receipt of one work item is fetched once per ingest however many worktrees receive it; without that, per-recipient
+queueing would multiply one ~1s call by the number of worktrees.
+
 **There is no background poller.** Ingest is a cursored pull on the injection hooks. This keeps the no-daemon property
 honest: nothing runs between firings, so nothing can die silently and leave a stale inbox looking healthy. The cost is
 that a session learns of a receipt when it next starts or next receives a prompt — **live mid-turn delivery is v2**, and
@@ -449,4 +454,8 @@ Each blocks the part it names, and nothing else.
 1. ~~**Can a hook resolve head SHA and work-item binding inside a worktree**~~ **Answered: yes.** Verified in a live
    session in a linked worktree; state resolves through `--git-common-dir`, so every worktree shares one `.dkm/`. The
    detached-head case is still unexercised
-1. **Does a cursored `gh` fetch fit inside the injection hooks' timeout**, and what happens when it does not
+1. ~~**Does a cursored `gh` fetch fit inside the injection hooks' timeout**~~ **Answered: yes, with a budget.** Measured
+   against a live repository, a cursored issue fetch of 30 items takes 0.78–1.27s and a single comment fetch 0.42–1.01s,
+   against a 15s hook timeout. One fetch is comfortable; the risk is their number. Ingest therefore memoises a receipt
+   across recipients and stops fetching once it has spent `budgetMs`, defaulting to 8s, after which events arrive as
+   headlines. Draining what is already pending is a local read and always happens

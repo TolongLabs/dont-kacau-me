@@ -80,23 +80,39 @@ function trackedRepoIds(recipients: Recipient[]): string[] {
  * Only a bound or followed item is worth a second `gh` call. Ambient is a headline and a URL by
  * definition, and without this a followed item would arrive as one too — never the contract delta
  * and head SHA that are the whole reason to follow something.
+ *
+ * Memoised across one ingest because the same item's receipt is identical for every recipient, and
+ * queueing per worktree would otherwise multiply one fetch by the number of worktrees. Measured at
+ * roughly 1s per `gh` call against a live repository, which the 15s hook timeout does not forgive
+ * many times over.
  */
-function receiptFor(root: string, item: WorkItemRef): Receipt | null {
+function receiptFor(root: string, item: WorkItemRef, cache: Map<string, Receipt | null>): Receipt | null {
+  const hit = cache.get(item.itemNodeId)
+  if (hit !== undefined) return hit
   const comment = findReceiptComment(root, item)
-  if (comment === null) return null
-  return parseReceipt(comment.body)
+  const receipt = comment === null ? null : parseReceipt(comment.body)
+  cache.set(item.itemNodeId, receipt)
+  return receipt
 }
 
 /**
  * `minIntervalMs` exists because UserPromptSubmit fires on every turn. Fetching there unthrottled
  * would put a network call on the hot path of every prompt the human types.
  */
-export function ingest(root: string, minIntervalMs = 0): void {
+/**
+ * `budgetMs` is the wall-clock allowance for network work. Past it, ingest stops fetching receipts
+ * and lets the remaining events arrive as headlines: a late delta is worth more than a hook the
+ * harness kills, and draining what is already pending is a local read that always happens.
+ */
+export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: () => number = Date.now): void {
+  const startedAt = now()
+  const receipts = new Map<string, Receipt | null>()
   const cursors = readCursors(root)
   const all = recipients(root)
   for (const repoNodeId of trackedRepoIds(all)) {
     const since = cursors.cursors[repoNodeId] ?? new Date(Date.now() - 86_400_000).toISOString()
     if (minIntervalMs > 0 && Date.now() - Date.parse(since) < minIntervalMs) continue
+    if (now() - startedAt > budgetMs) break
     const events = fetchSince(root, since)
     for (const ev of events) {
       // The same event is queued once per recipient, each with the tier that recipient sees it at.
@@ -112,7 +128,7 @@ export function ingest(root: string, minIntervalMs = 0): void {
           observedAt: ev.updatedAt,
           headline: ev.headline,
           url: ev.url,
-          receipt: claimed === null ? null : receiptFor(root, claimed.item)
+          receipt: claimed === null || now() - startedAt > budgetMs ? null : receiptFor(root, claimed.item, receipts)
         })
       }
     }

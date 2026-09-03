@@ -28,7 +28,8 @@ Contents:
 different developers, and decides on its installer's behalf inside their own sessions, so that no human has to act as a
 courier or a decision queue.
 
-Repo: `github.com/TolongLabs/dont-kacau-me` (private). Built by TolongLabs.
+Repo: [`github.com/TolongLabs/dont-kacau-me`](https://github.com/TolongLabs/dont-kacau-me). Built by TolongLabs, MIT
+licensed, and open to outside contributions — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 **Pure hooks, no daemon.** Nothing runs between hook firings, so nothing can die silently and leave a stale inbox
 looking healthy. The binding constraint is the hook timeout: everything on the hot path is a local `git`, file or `gh`
@@ -284,7 +285,7 @@ Folding an unrelated fix into a PR hides it; leaving it unrecorded loses it.
   that sets the invented name will pass forever
 - **Do not** commit directly to `main`, force-push, rewrite published history, or delete a branch other than a merged
   feature branch
-- **Do not** commit `.env`, or any credential
+- **Do not** commit `.env`, or any credential. This repository is public: assume anything committed is published
 - **Do not** commit a path that only exists on your machine. `/home/<you>/...`, `C:\Users\...` and scratch directories
   under `/tmp` are invisible to everyone else. Name the tool, not your copy of it
 - **Do not** create `docs/architecture.md` or a second README

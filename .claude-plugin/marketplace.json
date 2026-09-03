@@ -1,0 +1,26 @@
+{
+  "name": "tolonglabs",
+  "owner": {
+    "name": "TolongLabs",
+    "url": "https://github.com/TolongLabs"
+  },
+  "metadata": {
+    "description": "Plugins from TolongLabs.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "dont-kacau-me",
+      "description": "Carries verified work context between developers' agent fleets, and decides on your behalf from a policy you wrote.",
+      "version": "0.2.0",
+      "author": {
+        "name": "TolongLabs"
+      },
+      "homepage": "https://github.com/TolongLabs/dont-kacau-me",
+      "license": "MIT",
+      "category": "workflow",
+      "keywords": ["agents", "coordination", "github", "receipts", "permissions", "worktrees"],
+      "source": "./"
+    }
+  ]
+}

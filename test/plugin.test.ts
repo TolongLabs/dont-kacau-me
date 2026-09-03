@@ -79,3 +79,42 @@ test('the committed policy parses and grants nothing that trips a blast-radius r
   expect(policy).toContain('[[allow]]')
   expect(policy).not.toMatch(/match\s*=\s*"(curl|git push|npm publish|rm -rf)/)
 })
+
+/**
+ * The version appears in three places that drift apart silently: the plugin manifest, the
+ * marketplace entry that installs it, and the changelog a user reads to decide whether to upgrade.
+ * A mismatch installs one version while claiming another.
+ */
+test('the plugin, the marketplace entry and the changelog agree on the version', () => {
+  const manifest = readJson('.claude-plugin/plugin.json') as Record<string, unknown>
+  const marketplace = readJson('.claude-plugin/marketplace.json') as {
+    plugins: { name: string; version: string }[]
+  }
+  const entry = marketplace.plugins.find((p) => p.name === manifest.name)
+  expect(entry).toBeDefined()
+  expect(entry?.version).toBe(manifest.version as string)
+
+  const changelog = readFileSync(join(root, 'CHANGELOG.md'), 'utf8')
+  expect(changelog).toContain(`## [${manifest.version as string}]`)
+})
+
+test('the open-source files a public repository is expected to carry are present', () => {
+  for (const file of [
+    'LICENSE',
+    'CONTRIBUTING.md',
+    'CODE_OF_CONDUCT.md',
+    'SECURITY.md',
+    'CHANGELOG.md',
+    '.github/PULL_REQUEST_TEMPLATE.md',
+    '.github/ISSUE_TEMPLATE/bug_report.yml',
+    '.github/ISSUE_TEMPLATE/feature_request.yml'
+  ]) {
+    expect(existsSync(join(root, file))).toBe(true)
+  }
+})
+
+test('the licence the manifest claims is the licence that ships', () => {
+  const manifest = readJson('.claude-plugin/plugin.json') as Record<string, unknown>
+  expect(manifest.license).toBe('MIT')
+  expect(readFileSync(join(root, 'LICENSE'), 'utf8')).toContain('MIT License')
+})

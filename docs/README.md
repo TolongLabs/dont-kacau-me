@@ -7,7 +7,7 @@
 ![Biome](https://img.shields.io/badge/Biome-lint_%26_format-60A5FA?logo=biome&logoColor=white)
 ![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757)
 ![MIT licence](https://img.shields.io/badge/licence-MIT-blue)
-![Private repository](https://img.shields.io/badge/repository-private-555555)
+![Version](https://img.shields.io/badge/version-0.2.0-informational)
 
 Verified work context between developers' agent fleets, and policy-backed answers inside the installer's own sessions.
 No human courier. No human decision queue. No manufactured consent.
@@ -36,6 +36,8 @@ Contents:
    1. [The thing the agent could not decide](#the-thing-the-agent-could-not-decide)
 1. [Repository layout](#repository-layout)
 1. [What DKM cannot do](#what-dkm-cannot-do)
+1. [Contributing](#contributing)
+1. [Licence](#licence)
 1. [How work ships](#how-work-ships)
 
 ## About the project
@@ -255,11 +257,15 @@ opt-in, and nothing runs in the background when you are not running it.
 - [Claude Code installed and authenticated](https://code.claude.com/docs/en/plugins).
 - A git repository with GitHub work items and an authenticated `gh` CLI.
 - [Bun](https://bun.sh/) for the plugin runtime and development tooling.
-- Access to this private repository.
 
 ### Installation
 
-1. Clone or copy the DKM repository to a stable local path.
+1. Clone the repository to a stable local path:
+
+   ```bash
+   git clone https://github.com/TolongLabs/dont-kacau-me.git
+   ```
+
 1. Install the development tooling. This also wires the husky git hooks:
 
    ```bash
@@ -368,10 +374,16 @@ teammates can see it without anyone being interrupted.
 ## Repository layout
 
 ```text
-.claude-plugin/plugin.json  # plugin manifest
+.claude-plugin/plugin.json       # plugin manifest
+.claude-plugin/marketplace.json  # so the plugin can be installed, not only --plugin-dir'd
 .dkm/policy.toml            # the committed policy; all other .dkm/ state is git-ignored
 AGENTS.md                   # canonical project instructions
+CHANGELOG.md                # what changed, and what is known to be broken
 CLAUDE.md                   # points at AGENTS.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+LICENSE                     # MIT
+SECURITY.md                 # private reporting, and what is in scope
 biome.json                  # lint and format for JS, TS, JSON
 commitlint.config.js
 package.json
@@ -426,6 +438,21 @@ test/
 - **The policy is read from the worktree's own checkout.** Every other piece of state resolves to one shared store, but
   `policy.toml` does not, so two worktrees on different branches can be governed by different policies. Tracked in
   [issue #10](https://github.com/TolongLabs/dont-kacau-me/issues/10).
+
+## Contributing
+
+Issues and pull requests are welcome. [`CONTRIBUTING.md`](../CONTRIBUTING.md) has the setup, the commit convention and
+the two testing rules this project will not bend on: pin the harness's contract rather than your own, and mutation-test
+every new test before trusting it.
+
+- [`AGENTS.md`](../AGENTS.md) — the canonical instruction set, for humans and agentic tools alike
+- [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) — the Contributor Covenant
+- [`SECURITY.md`](../SECURITY.md) — report a vulnerability privately, never as a public issue
+- [`CHANGELOG.md`](../CHANGELOG.md) — what changed, and what is still known to be broken
+
+## Licence
+
+[MIT](../LICENSE). Copyright 2026 TolongLabs.
 
 ## How work ships
 

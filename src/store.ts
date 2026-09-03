@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import type {
@@ -312,8 +312,17 @@ export function writeLastEmit(root: string, f: LastEmitFile): void {
   writeJson(root, 'last-emit.json', f)
 }
 
-export function listPending(root: string): PendingEvent[] {
-  const dir = join(dkmPath(root), 'pending')
+/**
+ * Pending events are queued per recipient worktree, not in one shared pile. A single queue has no
+ * notion of who an event is for: whichever session drained first consumed it, and every other
+ * session never saw it. The key is a hash so a worktree path becomes one safe directory name.
+ */
+export function recipientKey(worktreePath: string): string {
+  return createHash('sha256').update(worktreePath).digest('hex').slice(0, 16)
+}
+
+export function listPending(root: string, recipient: string): PendingEvent[] {
+  const dir = join(dkmPath(root), 'pending', recipient)
   const out: PendingEvent[] = []
   try {
     const names = readdirSync(dir)
@@ -333,15 +342,18 @@ export function listPending(root: string): PendingEvent[] {
   return out
 }
 
-export function writePending(root: string, e: PendingEvent): void {
+export function writePending(root: string, recipient: string, e: PendingEvent): void {
   if (e.eventId.includes('/') || e.eventId.includes('..')) {
     throw new Error('invalid eventId')
   }
-  writeJson(root, join('pending', `${e.eventId}.json`), e)
+  if (!/^[0-9a-f]{16}$/.test(recipient)) {
+    throw new Error('invalid recipient')
+  }
+  writeJson(root, join('pending', recipient, `${e.eventId}.json`), e)
 }
 
-export function drainPending(root: string): PendingEvent[] {
-  const dir = join(dkmPath(root), 'pending')
+export function drainPending(root: string, recipient: string): PendingEvent[] {
+  const dir = join(dkmPath(root), 'pending', recipient)
   const out: PendingEvent[] = []
   let names: string[]
   try {

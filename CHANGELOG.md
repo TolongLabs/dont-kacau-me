@@ -8,6 +8,15 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+### Fixed
+
+- Delivery is now per recipient. `.dkm/pending/` is one queue per worktree and the tracking tier is resolved for the
+  worktree that is reading, so a followed item is no longer labelled bound and one session no longer consumes another's
+  event ([#9])
+- The receipt's decision summary counts the turn that produced it rather than the session's whole lifetime ([#6])
+- One repository, one policy. `loadPolicy` resolves through the shared store instead of the caller's own checkout, so a
+  session cannot be governed by — or change — a policy on its own branch ([#10])
+
 ## [0.2.0] — 2026-09-04
 
 The release in which DKM was run inside a real Claude Code session for the first time, which falsified four of its hook
@@ -51,10 +60,8 @@ contracts at once.
 
 ### Known limitations
 
-- The tracking tier is resolved across every worktree rather than the reading one, and `.dkm/pending/` has no notion of
-  a recipient, so with several sessions running the first to drain consumes the event ([#9])
-- `loadPolicy` reads the worktree's own checkout instead of the shared store, so two worktrees on different branches can
-  be governed by different policies ([#10])
+- A queued event is removed when a session drains it. Nothing records whether the model acted on it, so an injected
+  delta the agent ignored looks identical to one it used
 
 ## [0.1.0] — 2026-09-03
 
@@ -64,5 +71,6 @@ against a fake `gh` in a test harness only.
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TolongLabs/dont-kacau-me/releases/tag/v0.1.0
+[#6]: https://github.com/TolongLabs/dont-kacau-me/issues/6
 [#9]: https://github.com/TolongLabs/dont-kacau-me/issues/9
 [#10]: https://github.com/TolongLabs/dont-kacau-me/issues/10

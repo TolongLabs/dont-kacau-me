@@ -10,6 +10,7 @@ import {
   readCursors,
   readDecisions,
   readLastEmit,
+  recipientKey,
   writeBindings,
   writeCursors,
   writeLastEmit,
@@ -26,6 +27,8 @@ import type {
   Receipt,
   WorkItemRef
 } from './types'
+
+const RECIPIENT = recipientKey('/wt/a')
 
 let tmpDir: string
 
@@ -126,24 +129,24 @@ test('readers return empty defaults for missing files', () => {
   expect(readBindings(tmpDir)).toEqual(emptyBindings)
   expect(readCursors(tmpDir)).toEqual(emptyCursors)
   expect(readLastEmit(tmpDir)).toEqual(emptyLastEmit)
-  expect(listPending(tmpDir)).toEqual([])
-  expect(drainPending(tmpDir)).toEqual([])
+  expect(listPending(tmpDir, RECIPIENT)).toEqual([])
+  expect(drainPending(tmpDir, RECIPIENT)).toEqual([])
   expect(readDecisions(tmpDir)).toEqual([])
 })
 
 test('readers fall back to defaults on corrupt json', () => {
-  mkdirSync(join(tmpDir, '.dkm', 'pending'), { recursive: true })
+  mkdirSync(join(tmpDir, '.dkm', 'pending', RECIPIENT), { recursive: true })
   writeFileSync(join(tmpDir, '.dkm', 'bindings.json'), 'not json')
   writeFileSync(join(tmpDir, '.dkm', 'cursor.json'), 'not json')
   writeFileSync(join(tmpDir, '.dkm', 'last-emit.json'), 'not json')
-  writeFileSync(join(tmpDir, '.dkm', 'pending', 'bad.json'), 'not json')
+  writeFileSync(join(tmpDir, '.dkm', 'pending', RECIPIENT, 'bad.json'), 'not json')
   writeFileSync(join(tmpDir, '.dkm', 'decisions.jsonl'), 'not json\n')
 
   expect(readBindings(tmpDir)).toEqual(emptyBindings)
   expect(readCursors(tmpDir)).toEqual(emptyCursors)
   expect(readLastEmit(tmpDir)).toEqual(emptyLastEmit)
-  expect(listPending(tmpDir)).toEqual([])
-  expect(drainPending(tmpDir)).toEqual([])
+  expect(listPending(tmpDir, RECIPIENT)).toEqual([])
+  expect(drainPending(tmpDir, RECIPIENT)).toEqual([])
   expect(readDecisions(tmpDir)).toEqual([])
 })
 
@@ -164,8 +167,8 @@ test('writers create .dkm and overwrite atomically', () => {
   expect(readLastEmit(tmpDir)).toEqual(lastEmit)
 
   const pending = samplePending('p1')
-  writePending(tmpDir, pending)
-  expect(listPending(tmpDir)).toEqual([pending])
+  writePending(tmpDir, RECIPIENT, pending)
+  expect(listPending(tmpDir, RECIPIENT)).toEqual([pending])
 
   const decision = sampleDecision('1')
   appendDecision(tmpDir, decision)
@@ -178,40 +181,40 @@ test('writers create .dkm and overwrite atomically', () => {
 
 test('a pending event carrying a full receipt round-trips', () => {
   const pending = { ...samplePending('r1'), receipt: sampleReceipt() }
-  writePending(tmpDir, pending)
-  expect(listPending(tmpDir)).toEqual([pending])
+  writePending(tmpDir, RECIPIENT, pending)
+  expect(listPending(tmpDir, RECIPIENT)).toEqual([pending])
 })
 
 test('pending list is sorted and drain removes only parsed files', () => {
   const a = samplePending('a')
   const b = samplePending('b')
-  writePending(tmpDir, b)
-  writePending(tmpDir, a)
-  expect(listPending(tmpDir)).toEqual([a, b])
+  writePending(tmpDir, RECIPIENT, b)
+  writePending(tmpDir, RECIPIENT, a)
+  expect(listPending(tmpDir, RECIPIENT)).toEqual([a, b])
 
-  const drained = drainPending(tmpDir)
+  const drained = drainPending(tmpDir, RECIPIENT)
   expect(drained).toEqual([a, b])
-  expect(listPending(tmpDir)).toEqual([])
-  expect(drainPending(tmpDir)).toEqual([])
+  expect(listPending(tmpDir, RECIPIENT)).toEqual([])
+  expect(drainPending(tmpDir, RECIPIENT)).toEqual([])
 })
 
 test('drain leaves unparseable pending files behind', () => {
   const a = samplePending('a')
-  writePending(tmpDir, a)
-  mkdirSync(join(tmpDir, '.dkm', 'pending'), { recursive: true })
-  writeFileSync(join(tmpDir, '.dkm', 'pending', 'bad.json'), 'not json')
+  writePending(tmpDir, RECIPIENT, a)
+  mkdirSync(join(tmpDir, '.dkm', 'pending', RECIPIENT), { recursive: true })
+  writeFileSync(join(tmpDir, '.dkm', 'pending', RECIPIENT, 'bad.json'), 'not json')
 
-  const drained = drainPending(tmpDir)
+  const drained = drainPending(tmpDir, RECIPIENT)
   expect(drained).toEqual([a])
-  expect(listPending(tmpDir)).toEqual([])
-  expect(existsSync(join(tmpDir, '.dkm', 'pending', 'bad.json'))).toBe(true)
-  expect(existsSync(join(tmpDir, '.dkm', 'pending', 'a.json'))).toBe(false)
+  expect(listPending(tmpDir, RECIPIENT)).toEqual([])
+  expect(existsSync(join(tmpDir, '.dkm', 'pending', RECIPIENT, 'bad.json'))).toBe(true)
+  expect(existsSync(join(tmpDir, '.dkm', 'pending', RECIPIENT, 'a.json'))).toBe(false)
 })
 
 test('writePending rejects path-traversal eventIds', () => {
-  expect(() => writePending(tmpDir, samplePending('a/b'))).toThrow()
-  expect(() => writePending(tmpDir, samplePending('a..b'))).toThrow()
-  expect(() => writePending(tmpDir, samplePending('../x'))).toThrow()
+  expect(() => writePending(tmpDir, RECIPIENT, samplePending('a/b'))).toThrow()
+  expect(() => writePending(tmpDir, RECIPIENT, samplePending('a..b'))).toThrow()
+  expect(() => writePending(tmpDir, RECIPIENT, samplePending('../x'))).toThrow()
 })
 
 test('decisions jsonl append and skip bad lines', () => {

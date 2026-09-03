@@ -2,7 +2,7 @@ import { workItemByNumber } from './github'
 import { readReport, writeReport } from './hooks/report'
 import { repoRoot } from './hooks/runtime'
 import { runSupervised } from './revive-run'
-import { listPending, readBindings, readDecisions, writeBindings } from './store'
+import { listPending, readBindings, readDecisions, recipientKey, writeBindings } from './store'
 import type { Binding, WorkItemRef } from './types'
 
 function fail(message: string): never {
@@ -49,7 +49,7 @@ function describe(item: WorkItemRef): string {
 
 function status(root: string): string {
   const binding = bindingFor(root)
-  const pending = listPending(root)
+  const pending = listPending(root, recipientKey(root))
   const decisions = readDecisions(root)
   const recent = decisions.slice(-5)
   const lines = [

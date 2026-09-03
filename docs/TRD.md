@@ -59,17 +59,17 @@ worktree B ──┘                      └── decisions.jsonl (local audit
 All state is under `.dkm/` at the main worktree root, git-ignored. It is per-checkout and disposable; deleting it costs
 only the cursors. The `.gitignore` entry is `.dkm/*` with `!.dkm/policy.toml`.
 
-| Path                         | Holds                                                          | Format         |
-| ---------------------------- | -------------------------------------------------------------- | -------------- |
-| `.dkm/policy.toml`           | The installer's decision policy. **Committed**, not ignored    | TOML           |
-| `.dkm/bindings.json`         | Worktree path to work-item node ID, and followed item node IDs | JSON           |
-| `.dkm/cursor.json`           | Per-repository ingest cursor                                   | JSON           |
-| `.dkm/pending/<id>.json`     | Fetched-but-not-yet-injected items                             | JSON per event |
-| `.dkm/decisions.jsonl`       | Append-only record of every autonomous decision                | JSONL          |
-| `.dkm/last-emit.json`        | Last emitted state per work item, for delta detection          | JSON           |
-| `.dkm/report/<session>.json` | Session-authored narrative and blockers for the next receipt   | JSON           |
-| `.dkm/revivals.jsonl`        | Append-only record of every usage-limit pause and resume       | JSONL          |
-| `.dkm/last-session.json`     | The session that ended last, and the reason the harness gave   | JSON           |
+| Path                                 | Holds                                                          | Format         |
+| ------------------------------------ | -------------------------------------------------------------- | -------------- |
+| `.dkm/policy.toml`                   | The installer's decision policy. **Committed**, not ignored    | TOML           |
+| `.dkm/bindings.json`                 | Worktree path to work-item node ID, and followed item node IDs | JSON           |
+| `.dkm/cursor.json`                   | Per-repository ingest cursor                                   | JSON           |
+| `.dkm/pending/<recipient>/<id>.json` | Fetched-but-not-yet-injected items, one queue per worktree     | JSON per event |
+| `.dkm/decisions.jsonl`               | Append-only record of every autonomous decision                | JSONL          |
+| `.dkm/last-emit.json`                | Last emitted state per work item, for delta detection          | JSON           |
+| `.dkm/report/<session>.json`         | Session-authored narrative and blockers for the next receipt   | JSON           |
+| `.dkm/revivals.jsonl`                | Append-only record of every usage-limit pause and resume       | JSONL          |
+| `.dkm/last-session.json`             | The session that ended last, and the reason the harness gave   | JSON           |
 
 `.dkm/policy.toml` is the one file that is committed, because it is the human grant that makes autonomy legitimate.
 Everything else is machine state.
@@ -221,9 +221,13 @@ repository that is neither the bound nor a followed item.
 - **Ambient** — repository-wide activity. `src/github.ts fetchSince()` lists issues and PRs updated since the cursor,
   and `src/hooks/inject.ts` stores only `headline` and `url`, never the body. Raw commits are not an ambient signal
 
-**`trackedRepos()` flattens every worktree's binding into one map**, so the tier a session is told about is decided by
-the order of `bindings.json` rather than by which worktree is reading. See
-[issue #9](https://github.com/TolongLabs/dont-kacau-me/issues/9).
+**Delivery is per recipient.** `ingest()` queues one copy of an event per worktree, under `.dkm/pending/<recipient>/`,
+where the recipient key is the first 16 hex characters of the SHA-256 of the worktree path. The tier is resolved
+separately for each recipient by `tierFor()`, so the worktree that owns an item is told `bound` and one that follows it
+is told `followed`. `drainAndRender()` reads only its own directory.
+
+A single shared queue could represent only one of those answers, and whichever session drained first consumed the event
+for everyone.
 
 ## The decision engine
 
@@ -376,7 +380,7 @@ text** — identical prose can represent two distinct states.
 | **Bind**   | `/dkm-bind <number>`, resolve, record                    | Binding is on disk                | repo node ID + worktree path                      |
 | **Emit**   | `Stop`, compute delta, upsert comment                    | GitHub confirms and it reads back | repo + work item + session incarnation + head SHA |
 | **Ingest** | `SessionStart` or `UserPromptSubmit`, fetch since cursor | The cursor has advanced           | comment ID + `updated_at`                         |
-| **Inject** | Drain `.dkm/pending/`, write to stdout                   | The session has consumed it       | event ID + recipient session                      |
+| **Inject** | Drain this worktree's queue, write to stdout             | The session has consumed it       | event ID + recipient worktree                     |
 | **Decide** | `PermissionRequest`, evaluate policy, log, return        | A decision is returned            | session + tool-use ID                             |
 
 The implementation of each loop:

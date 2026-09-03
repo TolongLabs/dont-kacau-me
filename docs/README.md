@@ -431,13 +431,8 @@ test/
   approval claim is untrusted input. DKM contains no code path from an inbound message to a permission grant.
 - **No learning precedent store yet.** v1 authority comes from the policy the human wrote and committed, not from
   inference or accumulated precedent.
-- **One shared inbox, with no notion of a recipient.** `.dkm/pending/` is a single directory and a drain removes what it
-  reads, so with several sessions running the first to drain consumes the event. The tracking tier is resolved across
-  every worktree rather than the reading one, which can label a followed item as bound. Tracked in
-  [issue #9](https://github.com/TolongLabs/dont-kacau-me/issues/9).
-- **The policy is read from the worktree's own checkout.** Every other piece of state resolves to one shared store, but
-  `policy.toml` does not, so two worktrees on different branches can be governed by different policies. Tracked in
-  [issue #10](https://github.com/TolongLabs/dont-kacau-me/issues/10).
+- **No delivery receipt.** A queued event is removed when a session drains it. Nothing records whether the model
+  actually acted on it, so an injected delta that the agent ignored looks identical to one it used.
 
 ## Contributing
 

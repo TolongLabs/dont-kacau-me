@@ -9,6 +9,14 @@ function fail(message: string): never {
   process.exit(1)
 }
 
+/**
+ * Claude Code exports CLAUDE_CODE_SESSION_ID. Keying the report on anything else writes a file the
+ * Stop hook never looks for, which silently drops every narrative and blocker a session records.
+ */
+function sessionId(): string {
+  return process.env.CLAUDE_CODE_SESSION_ID ?? 'cli'
+}
+
 function bindingFor(root: string): Binding {
   const file = readBindings(root)
   const existing = file.bindings.find((b) => b.worktreePath === root)
@@ -92,7 +100,7 @@ function main(): void {
   if (command === 'note') {
     const text = rest.join(' ').trim()
     if (text.length === 0) fail('expected some text to record')
-    const session = process.env.CLAUDE_SESSION_ID ?? 'cli'
+    const session = sessionId()
     const current = readReport(root, session)
     writeReport(root, session, { ...current, narrative: text })
     process.stdout.write('narrative recorded; it will appear on the next receipt\n')
@@ -102,7 +110,7 @@ function main(): void {
   if (command === 'blocker') {
     const text = rest.join(' ').trim()
     if (text.length === 0) fail('expected the blocker text')
-    const session = process.env.CLAUDE_SESSION_ID ?? 'cli'
+    const session = sessionId()
     const current = readReport(root, session)
     writeReport(root, session, { ...current, blockers: [...current.blockers, text] })
     process.stdout.write('blocker recorded; it will appear on the next receipt\n')

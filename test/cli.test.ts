@@ -38,7 +38,7 @@ function envFor(root: string, fixture: Fixture): Record<string, string> {
     FAKE_GH_FIXTURE: fixturePath,
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
     HOME: process.env.HOME ?? '',
-    CLAUDE_SESSION_ID: 'sess-1'
+    CLAUDE_CODE_SESSION_ID: 'sess-1'
   }
 }
 

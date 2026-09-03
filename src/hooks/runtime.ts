@@ -8,8 +8,6 @@ export type HookPayload = {
   stop_hook_active?: boolean
   tool_name?: string
   tool_input?: unknown
-  worktree_path?: string
-  branch?: string
 }
 
 export function readPayload(raw: string): HookPayload | null {

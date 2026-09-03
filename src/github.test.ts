@@ -1,13 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import {
-  fetchChecks,
-  fetchSince,
-  findReceiptComment,
-  resolveWorkItem,
-  runner,
-  upsertReceiptComment,
-  workItemByNumber
-} from './github'
+import { fetchChecks, fetchSince, findReceiptComment, runner, upsertReceiptComment, workItemByNumber } from './github'
 import type { WorkItemRef } from './types'
 
 type RunResult = ReturnType<typeof runner.run>
@@ -43,53 +35,6 @@ const item: WorkItemRef = {
   number: 42,
   kind: 'pr'
 }
-
-describe('resolveWorkItem', () => {
-  it('parses a PR from gh pr list', () => {
-    queue({
-      ok: true,
-      stdout: JSON.stringify([{ id: 'pr-node-1', number: 42, headRepository: { id: 'repo-node-1' } }]),
-      stderr: ''
-    })
-    const ref = resolveWorkItem('/repo', 'feature-x')
-    expect(ref).toEqual({
-      repoNodeId: 'repo-node-1',
-      itemNodeId: 'pr-node-1',
-      number: 42,
-      kind: 'pr'
-    })
-    expect(calls).toHaveLength(1)
-    const call = calls[0]
-    expect(call).toBeDefined()
-    if (call) {
-      expect(call.argv).toEqual([
-        'pr',
-        'list',
-        '--head',
-        'feature-x',
-        '--json',
-        'id,number,headRepository',
-        '--limit',
-        '1'
-      ])
-    }
-  })
-
-  it('returns null on empty list', () => {
-    queue({ ok: true, stdout: '[]', stderr: '' })
-    expect(resolveWorkItem('/repo', 'feature-x')).toBeNull()
-  })
-
-  it('returns null on malformed json', () => {
-    queue({ ok: true, stdout: '{not json', stderr: '' })
-    expect(resolveWorkItem('/repo', 'feature-x')).toBeNull()
-  })
-
-  it('returns null on non-zero exit', () => {
-    queue({ ok: false, stdout: '', stderr: 'gh failed' })
-    expect(resolveWorkItem('/repo', 'feature-x')).toBeNull()
-  })
-})
 
 describe('fetchChecks', () => {
   it('parses completed check runs', () => {
@@ -266,7 +211,7 @@ describe('fetchSince', () => {
       ]),
       stderr: ''
     })
-    const events = fetchSince('/repo', 'owner/repo', '2026-09-03T00:00:00Z')
+    const events = fetchSince('/repo', '2026-09-03T00:00:00Z')
     expect(events).toEqual([
       {
         kind: 'issue',
@@ -290,14 +235,24 @@ describe('fetchSince', () => {
     }
   })
 
+  it("asks gh for the checkout's own repository, not a node ID", () => {
+    queue({ ok: true, stdout: '[]', stderr: '' })
+    fetchSince('/repo', '2026-09-03T00:00:00Z')
+    const call = calls[0]
+    expect(call).toBeDefined()
+    if (call === undefined) throw new Error('no call')
+    // `gh` expands {owner}/{repo} from the remote. Anything else here is not a REST path and 404s.
+    expect(call.argv[1]).toStartWith('repos/{owner}/{repo}/issues?since=')
+  })
+
   it('returns empty array on non-zero exit', () => {
     queue({ ok: false, stdout: '', stderr: 'error' })
-    expect(fetchSince('/repo', 'owner/repo', '2026-09-03T00:00:00Z')).toEqual([])
+    expect(fetchSince('/repo', '2026-09-03T00:00:00Z')).toEqual([])
   })
 
   it('returns empty array on malformed json', () => {
     queue({ ok: true, stdout: 'not json', stderr: '' })
-    expect(fetchSince('/repo', 'owner/repo', '2026-09-03T00:00:00Z')).toEqual([])
+    expect(fetchSince('/repo', '2026-09-03T00:00:00Z')).toEqual([])
   })
 
   it('never requests or returns a body field', () => {
@@ -315,7 +270,7 @@ describe('fetchSince', () => {
       ]),
       stderr: ''
     })
-    const events = fetchSince('/repo', 'owner/repo', '2026-09-03T00:00:00Z')
+    const events = fetchSince('/repo', '2026-09-03T00:00:00Z')
     expect(calls).toHaveLength(1)
     const call = calls[0]
     expect(call).toBeDefined()

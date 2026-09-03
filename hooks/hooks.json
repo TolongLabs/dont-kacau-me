@@ -48,30 +48,6 @@
           }
         ]
       }
-    ],
-    "WorktreeCreate": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}\"/src/hooks/worktree-create.ts",
-            "timeout": 10,
-            "statusMessage": "Binding the worktree"
-          }
-        ]
-      }
-    ],
-    "WorktreeRemove": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}\"/src/hooks/worktree-remove.ts",
-            "timeout": 10,
-            "statusMessage": "Releasing the binding"
-          }
-        ]
-      }
     ]
   }
 }

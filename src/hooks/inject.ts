@@ -1,6 +1,7 @@
-import { fetchSince } from '../github'
+import { fetchSince, findReceiptComment } from '../github'
+import { parseReceipt } from '../receipt'
 import { drainPending, readBindings, readCursors, writeCursors, writePending } from '../store'
-import type { PendingEvent, TrackingTier, WorkItemRef } from '../types'
+import type { PendingEvent, Receipt, TrackingTier, WorkItemRef } from '../types'
 
 function short(sha: string): string {
   return sha.slice(0, 7)
@@ -55,6 +56,17 @@ function trackedRepos(root: string): Map<string, { tier: TrackingTier; item: Wor
 }
 
 /**
+ * Only a bound or followed item is worth a second `gh` call. Ambient is a headline and a URL by
+ * definition, and without this a followed item would arrive as one too — never the contract delta
+ * and head SHA that are the whole reason to follow something.
+ */
+function receiptFor(root: string, item: WorkItemRef): Receipt | null {
+  const comment = findReceiptComment(root, item)
+  if (comment === null) return null
+  return parseReceipt(comment.body)
+}
+
+/**
  * `minIntervalMs` exists because UserPromptSubmit fires on every turn. Fetching there unthrottled
  * would put a network call on the hot path of every prompt the human types.
  */
@@ -63,7 +75,7 @@ export function ingest(root: string, minIntervalMs = 0): void {
   for (const [repoNodeId, tracked] of trackedRepos(root)) {
     const since = cursors.cursors[repoNodeId] ?? new Date(Date.now() - 86_400_000).toISOString()
     if (minIntervalMs > 0 && Date.now() - Date.parse(since) < minIntervalMs) continue
-    const events = fetchSince(root, repoNodeId, since)
+    const events = fetchSince(root, since)
     for (const ev of events) {
       const claimed = tracked.find((t) => t.item.itemNodeId === ev.nodeId)
       writePending(root, {
@@ -75,7 +87,7 @@ export function ingest(root: string, minIntervalMs = 0): void {
         observedAt: ev.updatedAt,
         headline: ev.headline,
         url: ev.url,
-        receipt: null
+        receipt: claimed === undefined ? null : receiptFor(root, claimed.item)
       })
     }
     cursors.cursors[repoNodeId] = new Date().toISOString()

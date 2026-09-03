@@ -61,41 +61,6 @@ function toConclusion(status: unknown, conclusion: unknown): CheckResult['conclu
   return 'pending'
 }
 
-export function resolveWorkItem(repoRoot: string, branch: string): WorkItemRef | null {
-  const run = runner.run(repoRoot, [
-    'pr',
-    'list',
-    '--head',
-    branch,
-    '--json',
-    'id,number,headRepository',
-    '--limit',
-    '1'
-  ])
-  if (!run.ok) return null
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(run.stdout)
-  } catch {
-    return null
-  }
-  if (!Array.isArray(parsed) || parsed.length === 0) return null
-  const first = parsed[0]
-  if (!isObject(first)) return null
-  const id = first.id
-  const number = first.number
-  const headRepository = first.headRepository
-  if (!isString(id) || !isNumber(number) || !isObject(headRepository)) return null
-  const repoNodeId = headRepository.id
-  if (!isString(repoNodeId)) return null
-  return {
-    repoNodeId,
-    itemNodeId: id,
-    number,
-    kind: 'pr'
-  }
-}
-
 export function fetchChecks(repoRoot: string, ref: string): CheckResult[] {
   const run = runner.run(repoRoot, ['api', `repos/{owner}/{repo}/commits/${ref}/check-runs`])
   if (!run.ok) return []
@@ -187,10 +152,15 @@ export function upsertReceiptComment(repoRoot: string, item: WorkItemRef, body: 
   return String(id)
 }
 
-export function fetchSince(repoRoot: string, repo: string, sinceIso: string): AmbientEvent[] {
+/**
+ * The repository is the checkout's own, resolved by `gh` from its remote. It is deliberately not a
+ * parameter: this used to take the repo node ID and interpolate it into the path, which is not a
+ * REST identifier, so every fetch 404ed and fail-softed to nothing.
+ */
+export function fetchSince(repoRoot: string, sinceIso: string): AmbientEvent[] {
   const run = runner.run(repoRoot, [
     'api',
-    `repos/${repo}/issues?since=${encodeURIComponent(sinceIso)}&state=all&sort=updated&per_page=30`
+    `repos/{owner}/{repo}/issues?since=${encodeURIComponent(sinceIso)}&state=all&sort=updated&per_page=30`
   ])
   if (!run.ok) return []
   let parsed: unknown

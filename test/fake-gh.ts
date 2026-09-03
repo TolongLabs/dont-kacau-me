@@ -17,6 +17,10 @@ function matchPattern(argv: string[]): string | null {
   if (first === 'pr' && second === 'list') return 'pr-list'
   if (first === 'api' && second !== undefined) {
     const path = second
+    // The real API addresses a repository as owner/repo. Accepting anything in that slot is how a
+    // path built from a repo node ID passed the suite while 404ing against GitHub.
+    const repoSegment = /^repos\/(\{owner\}\/\{repo\}|[^/{}]+\/[^/{}]+)\//.exec(path)
+    if (repoSegment === null) fail(`not a repository path: ${path}`)
     if (path.includes('/check-runs')) return 'check-runs'
     if (path.includes('/issues/comments/') && argv.includes('PATCH')) return 'comment-patch'
     if (path.endsWith('/comments') && argv.includes('POST')) return 'comment-create'
@@ -49,15 +53,17 @@ async function main(): Promise<void> {
   const response = queue.shift()
   if (response === undefined) fail(`no queued response for ${pattern}`)
 
-  if (pattern === 'comment-create' || pattern === 'comment-patch') {
-    if (logPath !== undefined) {
-      writeFileSync(logPath, `${JSON.stringify(argv)}\n`, { flag: 'a' })
-    }
+  let input = ''
+  if (argv.includes('--input')) {
+    const chunks: Uint8Array[] = []
+    // Drained so the caller does not get EPIPE, and kept so a test can assert the published body.
+    for await (const chunk of Bun.stdin.stream()) chunks.push(chunk)
+    input = Buffer.concat(chunks).toString('utf8')
   }
 
-  if (argv.includes('--input')) {
-    for await (const _ of Bun.stdin.stream()) {
-      // drain stdin so the caller does not get EPIPE
+  if (pattern === 'comment-create' || pattern === 'comment-patch') {
+    if (logPath !== undefined) {
+      writeFileSync(logPath, `${JSON.stringify({ argv, input })}\n`, { flag: 'a' })
     }
   }
 

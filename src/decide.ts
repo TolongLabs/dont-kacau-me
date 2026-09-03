@@ -139,12 +139,18 @@ function isEgress(input: DecisionInput): boolean {
   return false
 }
 
+/**
+ * `.dkm/` is on this list because the policy is the human grant. An agent that can edit the file
+ * granting its own authority can widen that authority without anyone deciding to, which is the one
+ * thing the authority principle forbids. Reaching the human is the whole point, so this is `ask`.
+ */
 function isSurface(input: DecisionInput): boolean {
   for (const candidate of collectPathCandidates(input.toolInput)) {
     const resolved = path.resolve(input.cwd, candidate)
     const base = path.basename(resolved)
     if (SURFACE_FILES.has(base)) return true
     if (base.startsWith('.env.')) return true
+    if (resolved.split(path.sep).includes('.dkm')) return true
   }
   return false
 }

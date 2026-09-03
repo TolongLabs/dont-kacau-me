@@ -60,6 +60,15 @@ test('surface trips ask for lockfiles, env files and package.json', () => {
   }
 })
 
+test('the grant cannot be rewritten without the human seeing it', () => {
+  // A permissive allow rule must not reach .dkm/. Otherwise an agent widens its own authority by
+  // editing the file that grants it, which is the one thing the authority principle forbids.
+  const permissive: Policy = { version: 1, allow: [{ tool: 'Write' }, { tool: 'Edit' }], contractGlobs: [] }
+  for (const p of ['.dkm/policy.toml', '.dkm/decisions.jsonl', '.dkm/bindings.json']) {
+    expect(decide(write(`${WORKTREE}/${p}`), permissive)).toMatchObject({ decision: 'ask', trip: 'surface' })
+  }
+})
+
 test('an ordinary source write is not a surface trip', () => {
   expect(decide(write(`${WORKTREE}/src/index.ts`), EMPTY_POLICY).trip).toBeNull()
 })

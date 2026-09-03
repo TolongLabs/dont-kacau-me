@@ -54,26 +54,44 @@ Everything else is machine state.
 Every hook receives the standard payload on stdin, including `session_id`, `cwd`, `permission_mode` and
 `hook_event_name`.
 
-| Hook                | Reads                 | Effect                                                           |
-| ------------------- | --------------------- | ---------------------------------------------------------------- |
-| `WorktreeCreate`    | worktree path, branch | Resolve branch to a work item, write the binding. Nonzero aborts |
-| `WorktreeRemove`    | worktree path         | Release the binding                                              |
-| `Stop`              | `stop_hook_active`    | Compute delta; upsert the receipt only if it moved               |
-| `SessionStart`      | `cwd`                 | Drain `.dkm/pending/`, write to stdout so it reaches the model   |
-| `UserPromptSubmit`  | `cwd`                 | Fetch since cursor, drain pending, write to stdout               |
-| `PermissionRequest` | tool name, tool input | Return `decision` of `allow`, `deny` or `ask`                    |
+| Hook                | Reads                 | Effect                                                             |
+| ------------------- | --------------------- | ------------------------------------------------------------------ |
+| `Stop`              | `stop_hook_active`    | Compute delta; upsert the receipt only if it moved                 |
+| `SessionStart`      | `cwd`                 | Drain `.dkm/pending/`, write to stdout so it reaches the model     |
+| `UserPromptSubmit`  | `cwd`                 | Fetch since cursor, drain pending, write to stdout                 |
+| `PermissionRequest` | tool name, tool input | Answer `allow` or `deny`, or emit nothing to leave it to the human |
 
-**`PermissionRequest` output.** Exit code 2 is ignored by this event; the decision must be in the payload.
+**`PermissionRequest` output.** Exit code 2 is ignored by this event; the decision must be in the payload, and the
+payload is schema-validated. A shape the harness does not recognise is treated as a **hook failure, which denies the
+tool** — so a malformed `allow` is not a no-op, it is a deny the installer never asked for.
 
 ```json
-{ "hookSpecificOutput": { "decision": "allow" } }
+{ "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "allow" } } }
 ```
+
+```json
+{ "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "deny", "message": "why" } } }
+```
+
+**There is no wire form for `ask`.** The schema admits only `allow` and `deny`; emitting no decision at all (`{}`) is
+what hands the prompt back to the human. That makes `{}` the only safe output from a handler that has failed, and the
+`deny` message is shown to the model, so it should name the rule that produced it.
+
+**`WorktreeCreate` and `WorktreeRemove` are provider hooks, not notifications.** `WorktreeCreate` is expected to create
+the worktree and echo its path to stdout; a handler that echoes nothing aborts worktree creation with
+`hook succeeded but returned no worktree path`. `WorktreeRemove` is expected to remove it, and one that does not leaves
+the worktree on disk. Its payload carries `name`, never a worktree path or a branch. DKM therefore registers neither,
+and binding runs through `/dkm-bind`, which resolves the work item by number.
 
 **`SessionStart` and `UserPromptSubmit` output** is plain text on stdout, which the harness adds to the model's context.
 This is the only injection path available without a supervised process.
 
 **`Stop` re-entrancy.** The `stop_hook_active` flag is set when a `Stop` hook is already in flight. The handler must
 return immediately when it is set, or a hook that continues the conversation will loop.
+
+**`Stop` can also speak to the model**, through `hookSpecificOutput.additionalContext`. The conversation continues and
+the string is delivered verbatim, so a `Stop` hook can hand the agent a reason to keep going without exit 2. DKM v1 does
+not use this; it is what makes P2b reachable in v2.
 
 ## The receipt
 
@@ -153,7 +171,7 @@ text** — identical prose can represent two distinct states.
 
 | Loop       | Trigger and path                                         | Terminates when                   | Dedup key                                         |
 | ---------- | -------------------------------------------------------- | --------------------------------- | ------------------------------------------------- |
-| **Bind**   | `WorktreeCreate` or explicit command, resolve, record    | Binding is on disk                | repo node ID + worktree path                      |
+| **Bind**   | `/dkm-bind <number>`, resolve, record                    | Binding is on disk                | repo node ID + worktree path                      |
 | **Emit**   | `Stop`, compute delta, upsert comment                    | GitHub confirms and it reads back | repo + work item + session incarnation + head SHA |
 | **Ingest** | `SessionStart` or `UserPromptSubmit`, fetch since cursor | The cursor has advanced           | comment ID + `updated_at`                         |
 | **Inject** | Drain `.dkm/pending/`, write to stdout                   | The session has consumed it       | event ID + recipient session                      |
@@ -179,7 +197,9 @@ needs a supervised lifecycle v1 deliberately does not have.
 - **Duplicate or out-of-order events** — Dedup on resource version. Acknowledge only after persistence
 - **Wrong repository or recipient** — Bind on node IDs only
 - **Secret leakage** — Fixed allowlisted schema. Raw transcripts and tool output are never published
-- **Hook timeout** — Every handler fails open to `ask` and exits 0. A broken hook must never wedge a session
+- **Hook timeout** — Every handler fails open and exits 0. A broken hook must never wedge a session
+- **Fail-open that is really fail-closed** — A malformed decision is read as a hook failure and denies the tool.
+  `PermissionRequest` must emit `{}`, never a best-effort decision, when it cannot answer
 
 ## Testing
 
@@ -187,6 +207,7 @@ needs a supervised lifecycle v1 deliberately does not have.
 - **Idempotency** — the same state emitted twice edits one comment, never creates a second
 - **Staleness** — a receipt whose head moved is rejected by the consumer
 - **Decision table** — every row of the blast-radius table, plus the `ask` default
+- **Wire contract** — the exact bytes each hook writes, asserted against the harness's schema rather than ours
 - **Consent boundary** — a test asserts no reachable path from `.dkm/pending/` into the decision engine
 - **Log completeness** — every decision returned has a matching `decisions.jsonl` entry
 - **Fixture repository** — golden receipts diffed against recorded `git` and `gh` fixtures
@@ -195,6 +216,9 @@ needs a supervised lifecycle v1 deliberately does not have.
 
 Each blocks the part it names, and nothing else.
 
-1. **Does `Stop` exit 2 hand the model a usable reason to continue?** Determines whether any of P2b is reachable in v2
-1. **Can a hook resolve head SHA and work-item binding inside a worktree**, including a detached head
+1. ~~**Does `Stop` exit 2 hand the model a usable reason to continue?**~~ **Answered: yes, and exit 2 is not needed.**
+   `hookSpecificOutput.additionalContext` on `Stop` reaches the model verbatim and the turn continues. P2b is reachable
+1. ~~**Can a hook resolve head SHA and work-item binding inside a worktree**~~ **Answered: yes.** Verified in a live
+   session in a linked worktree; state resolves through `--git-common-dir`, so every worktree shares one `.dkm/`. The
+   detached-head case is still unexercised
 1. **Does a cursored `gh` fetch fit inside the injection hooks' timeout**, and what happens when it does not

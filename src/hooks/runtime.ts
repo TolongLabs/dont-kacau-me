@@ -8,6 +8,7 @@ export type HookPayload = {
   stop_hook_active?: boolean
   tool_name?: string
   tool_input?: unknown
+  reason?: string
 }
 
 export function readPayload(raw: string): HookPayload | null {

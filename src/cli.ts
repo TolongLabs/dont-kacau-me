@@ -1,6 +1,7 @@
 import { workItemByNumber } from './github'
 import { readReport, writeReport } from './hooks/report'
 import { repoRoot } from './hooks/runtime'
+import { runSupervised } from './revive-run'
 import { listPending, readBindings, readDecisions, writeBindings } from './store'
 import type { Binding, WorkItemRef } from './types'
 
@@ -117,12 +118,25 @@ function main(): void {
     return
   }
 
+  if (command === 'revive') {
+    const sep = rest.indexOf('--')
+    const prompt = (sep === -1 ? rest : rest.slice(0, sep)).join(' ').trim()
+    const claudeArgs = sep === -1 ? [] : rest.slice(sep + 1)
+    if (prompt.length === 0) fail('expected the prompt to run, e.g. dkm revive "work through issue 12"')
+    const report = runSupervised({ root, prompt, claudeArgs, maxAttempts: 24 })
+    if (report.outcome.kind === 'done') {
+      process.stdout.write(`${report.outcome.result}\n`)
+      return
+    }
+    fail(`run did not finish after ${report.attempts} attempt(s): ${report.outcome.kind}`)
+  }
+
   if (command === 'status' || command === undefined) {
     process.stdout.write(`${status(root)}\n`)
     return
   }
 
-  fail(`unknown command: ${command}\nexpected one of: bind, follow, unfollow, note, blocker, status`)
+  fail(`unknown command: ${command}\nexpected one of: bind, follow, unfollow, note, blocker, revive, status`)
 }
 
 main()

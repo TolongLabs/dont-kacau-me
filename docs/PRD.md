@@ -23,15 +23,16 @@ Contents:
 
 ## Functional requirements
 
-| ID             | Requirement                                                                                                      | Acceptance                                                                           |
-| -------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **FR-BIND**    | A session binds to a work item, explicitly or by resolving its branch to an open PR                              | Binding survives a restart; a wrong basename or branch name never resolves a binding |
-| **FR-EMIT**    | On `Stop`, if and only if head SHA, blocker set or check state changed, upsert the work item's receipt           | No delta produces no write; the same delta twice edits one comment                   |
-| **FR-TIER**    | Track at three tiers: bound, followed, ambient. Deliver at the finest tier that claims a signal                  | A signal claimed by `bound` never also arrives as `ambient`                          |
-| **FR-INGEST**  | On `SessionStart` and `UserPromptSubmit`, fetch since the persisted cursor and inject pending items into context | Cursor advances; a replayed fetch injects nothing new                                |
-| **FR-DECIDE**  | On `PermissionRequest`, evaluate the installer's policy and return `allow`, `deny` or `ask`                      | Every branch of the rule table is exercised by a test                                |
-| **FR-LOG**     | Every autonomous decision appends a record naming the rule, the inputs, and how to reverse it                    | A decision with no matching log entry fails the test suite                           |
-| **FR-AMBIENT** | Ambient covers new issues, new PRs, @mentions and base-branch CI failures. Headline and URL only                 | Bodies are never fetched or stored; raw commits are not an ambient signal            |
+| ID             | Requirement                                                                                                         | Acceptance                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **FR-BIND**    | A session binds to a work item, explicitly or by resolving its branch to an open PR                                 | Binding survives a restart; a wrong basename or branch name never resolves a binding |
+| **FR-EMIT**    | On `Stop`, if and only if head SHA, blocker set or check state changed, upsert the work item's receipt              | No delta produces no write; the same delta twice edits one comment                   |
+| **FR-TIER**    | Track at three tiers: bound, followed, ambient. Deliver at the finest tier that claims a signal                     | A signal claimed by `bound` never also arrives as `ambient`                          |
+| **FR-INGEST**  | On `SessionStart` and `UserPromptSubmit`, fetch since the persisted cursor and inject pending items into context    | Cursor advances; a replayed fetch injects nothing new                                |
+| **FR-DECIDE**  | On `PermissionRequest`, evaluate the installer's policy and return `allow`, `deny` or `ask`                         | Every branch of the rule table is exercised by a test                                |
+| **FR-LOG**     | Every autonomous decision appends a record naming the rule, the inputs, and how to reverse it                       | A decision with no matching log entry fails the test suite                           |
+| **FR-AMBIENT** | Ambient covers new issues, new PRs, @mentions and base-branch CI failures. Headline and URL only                    | Bodies are never fetched or stored; raw commits are not an ambient signal            |
+| **FR-REVIVE**  | A supervised run treats a usage limit as a pause: wait for the reset the server named, then resume the same session | A limit resumes by session id, never by replaying the prompt; a genuine error stops  |
 
 **Ambient excludes raw commits deliberately.** A commit reaches the user as a head SHA change on a bound or followed
 item, which is the only context where it is actionable.
@@ -45,6 +46,8 @@ item, which is the only context where it is actionable.
   published
 - **NFR-PROV** — Every published claim carries the SHA it was observed at. A consumer re-fetches when head has moved
 - **NFR-QUIET** — A session that changed nothing produces no network write and no output
+- **NFR-WAIT** — A usage limit is waited out, never evaded. No retry runs before the reset the server reported, and no
+  path changes credentials or account
 
 ## Out of scope
 
@@ -55,5 +58,6 @@ Each with the reason, so nobody relitigates it:
 - **Spawning or scheduling agents** — Agent Teams' job
 - **File locking and conflict resolution** — worktree isolation plus Agent Teams' file-locked claiming already cover it
 - **A dashboard** — Agent View already aggregates a developer's local sessions
-- **Live mid-turn delivery** — v2. It needs a supervised lifecycle, which v1 deliberately has none of
+- **Live mid-turn delivery** — v2. It needs a supervised lifecycle on the _hook_ path, which v1 deliberately has none
+  of. `dkm revive` supervises a whole run from outside the harness and does not give the hooks one
 - **A learning precedent store** — v3. v1's authority comes from a policy the human wrote, not from inference

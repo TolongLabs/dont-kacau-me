@@ -115,3 +115,19 @@ export type DecisionInput = {
   toolName: string
   toolInput: unknown
 }
+
+export type RevivalRecord = {
+  ts: string
+  attempt: number
+  event: 'waiting' | 'done' | 'failed' | 'unresumable'
+  sessionId: string | null
+  waitMs: number
+  detail?: string
+}
+
+export type ResumeTicket = {
+  sessionId: string
+  cwd: string
+  reason: string
+  endedAt: string
+}

@@ -12,17 +12,14 @@ Contents:
 
 ## User stories
 
-**US-1.** As a developer with several worktrees, I bind each session to a work item once, and never hand-summarise its
-progress again.
-
-**US-2.** As a developer whose agent depends on someone else's work, I receive their contract changes in my agent's
-context, bound to the commit they were observed at, without asking anyone.
-
-**US-3.** As a developer, my agents stop asking me questions my own policy already answers, and I can read every call
-they made in one place afterwards.
-
-**US-4.** As a teammate, I see one comment per work item that tells me what actually changed, with the agent's opinions
-visibly separated from the measured facts.
+- **US-1.** As a developer with several worktrees, I bind each session to a work item once, and never hand-summarise its
+  progress again.
+- **US-2.** As a developer whose agent depends on someone else's work, I receive their contract changes in my agent's
+  context, bound to the commit they were observed at, without asking anyone.
+- **US-3.** As a developer, my agents stop asking me questions my own policy already answers, and I can read every call
+  they made in one place afterwards.
+- **US-4.** As a teammate, I see one comment per work item that tells me what actually changed, with the agent's
+  opinions visibly separated from the measured facts.
 
 ## Functional requirements
 
@@ -41,14 +38,13 @@ item, which is the only context where it is actionable.
 
 ## Non-functional requirements
 
-| ID               | Requirement                                                                                              |
-| ---------------- | -------------------------------------------------------------------------------------------------------- |
-| **NFR-AUTH**     | No code path exists from an inbound message to a permission decision. Enforced by a test, not by review  |
-| **NFR-NODAEMON** | No process runs between hook firings. Ingest is a cursored pull, never a background poller               |
-| **NFR-BUDGET**   | Every hook completes within its timeout on a repository of at least 5,000 commits                        |
-| **NFR-SCHEMA**   | Published receipts carry a fixed allowlisted schema. Raw transcripts and tool output are never published |
-| **NFR-PROV**     | Every published claim carries the SHA it was observed at. A consumer re-fetches when head has moved      |
-| **NFR-QUIET**    | A session that changed nothing produces no network write and no output                                   |
+- **NFR-AUTH** — No code path exists from an inbound message to a permission decision. Enforced by a test, not by review
+- **NFR-NODAEMON** — No process runs between hook firings. Ingest is a cursored pull, never a background poller
+- **NFR-BUDGET** — Every hook completes within its timeout on a repository of at least 5,000 commits
+- **NFR-SCHEMA** — Published receipts carry a fixed allowlisted schema. Raw transcripts and tool output are never
+  published
+- **NFR-PROV** — Every published claim carries the SHA it was observed at. A consumer re-fetches when head has moved
+- **NFR-QUIET** — A session that changed nothing produces no network write and no output
 
 ## Out of scope
 

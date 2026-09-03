@@ -1,6 +1,7 @@
+import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import type {
   Binding,
   BindingsFile,
@@ -20,8 +21,20 @@ const emptyBindings: BindingsFile = { version: 1, bindings: [] }
 const emptyCursors: CursorFile = { version: 1, cursors: {} }
 const emptyLastEmit: LastEmitFile = { version: 1, emitted: {} }
 
+/**
+ * State lives at the MAIN worktree's root, not the caller's. In a linked worktree `--show-toplevel`
+ * returns that worktree, so resolving state from it would give every worktree a private .dkm/ and
+ * silo exactly the bindings, cursors and decisions that are supposed to be shared between them.
+ * `--git-common-dir` points at the shared .git for every worktree of a repository; its parent is the
+ * main worktree root, and for a plain checkout it is simply the root itself.
+ */
 function dkmPath(root: string): string {
-  return join(root, '.dkm')
+  const r = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: root, encoding: 'utf8', timeout: 5000 })
+  if (r.status !== 0 || typeof r.stdout !== 'string') return join(root, '.dkm')
+  const common = r.stdout.trim()
+  if (common.length === 0) return join(root, '.dkm')
+  const absolute = isAbsolute(common) ? common : join(root, common)
+  return join(dirname(absolute), '.dkm')
 }
 
 function atomicWrite(target: string, data: string): void {

@@ -217,3 +217,27 @@ export function fetchSince(repoRoot: string, repo: string, sinceIso: string): Am
   }
   return out
 }
+
+export function workItemByNumber(repoRoot: string, number: number): WorkItemRef | null {
+  const run = runner.run(repoRoot, [
+    'api',
+    `repos/{owner}/{repo}/issues/${number}`,
+    '--jq',
+    '{id: .node_id, number: .number, isPr: (.pull_request != null), repo: .repository_url}'
+  ])
+  if (!run.ok) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(run.stdout)
+  } catch {
+    return null
+  }
+  if (!isObject(parsed)) return null
+  const id = parsed.id
+  const num = parsed.number
+  if (!isString(id) || !isNumber(num)) return null
+  const repoRun = runner.run(repoRoot, ['repo', 'view', '--json', 'id', '--jq', '.id'])
+  const repoNodeId = repoRun.ok ? repoRun.stdout.trim() : ''
+  if (repoNodeId.length === 0) return null
+  return { repoNodeId, itemNodeId: id, number: num, kind: parsed.isPr === true ? 'pr' : 'issue' }
+}

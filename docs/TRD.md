@@ -112,8 +112,8 @@ matches the work item's head is **stale by definition**, and a consumer must re-
 **Evaluation order.** First match wins; the default is always `ask`.
 
 1. **Blast-radius deny rules.** Mechanically checkable, no judgement
-2. **Explicit policy allow rules.** Paths, tools and commands the installer granted in advance
-3. **Default `ask`.** Anything unmatched reaches the human, exactly as today
+1. **Explicit policy allow rules.** Paths, tools and commands the installer granted in advance
+1. **Default `ask`.** Anything unmatched reaches the human, exactly as today
 
 **The blast-radius table is the safety property**, and it is deliberately mechanical rather than a model's assessment of
 importance. Agents are systematically poor at self-assessing risk; a rule table cannot talk itself into optimism.
@@ -171,18 +171,16 @@ needs a supervised lifecycle v1 deliberately does not have.
 
 ## Failure modes
 
-| Failure                              | Structural mitigation                                                                   |
-| ------------------------------------ | --------------------------------------------------------------------------------------- |
-| **Receipt storm**                    | Emit only on a real state delta. One mutable comment per work item, edited in place     |
-| **Agent feedback loop**              | Every event carries a root ID and a hop budget. A relayed event is never republished    |
-| **Speculation becomes fact**         | Typed kinds. Only `measured` may be acted on; `narrative` is display-only               |
-| **Stale context**                    | Every claim carries its SHA. The consumer re-fetches when head has moved                |
-| **Consent laundering**               | The engine never reads inbound state. Asserted by `NFR-AUTH`                            |
-| **Runaway autonomy**                 | Default `ask`, deny rules evaluated first, and every call logged before it returns      |
-| **Duplicate or out-of-order events** | Dedup on resource version. Acknowledge only after persistence                           |
-| **Wrong repository or recipient**    | Bind on node IDs only                                                                   |
-| **Secret leakage**                   | Fixed allowlisted schema. Raw transcripts and tool output are never published           |
-| **Hook timeout**                     | Every handler fails open to `ask` and exits 0. A broken hook must never wedge a session |
+- **Receipt storm** — Emit only on a real state delta. One mutable comment per work item, edited in place
+- **Agent feedback loop** — Every event carries a root ID and a hop budget. A relayed event is never republished
+- **Speculation becomes fact** — Typed kinds. Only `measured` may be acted on; `narrative` is display-only
+- **Stale context** — Every claim carries its SHA. The consumer re-fetches when head has moved
+- **Consent laundering** — The engine never reads inbound state. Asserted by `NFR-AUTH`
+- **Runaway autonomy** — Default `ask`, deny rules evaluated first, and every call logged before it returns
+- **Duplicate or out-of-order events** — Dedup on resource version. Acknowledge only after persistence
+- **Wrong repository or recipient** — Bind on node IDs only
+- **Secret leakage** — Fixed allowlisted schema. Raw transcripts and tool output are never published
+- **Hook timeout** — Every handler fails open to `ask` and exits 0. A broken hook must never wedge a session
 
 ## Testing
 

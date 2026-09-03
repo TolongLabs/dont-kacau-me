@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 680" width="1000" height="680" role="img">
+  <title>DKM architecture: hooks, the shared store, GitHub and the human</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#57606a"/>
+    </marker>
+  </defs>
+  <style>
+    .p { font-family: ui-sans-serif, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #1f2328; }
+    .m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #1f2328; }
+    .s { fill: #57606a; }
+    .box { fill: #ffffff; stroke: #d0d7de; stroke-width: 1.5; }
+    .grp { fill: #eef1f4; stroke: #afb8c1; stroke-width: 1.5; }
+    .ln { stroke: #57606a; stroke-width: 1.6; fill: none; marker-end: url(#a); }
+  </style>
+
+  <rect x="0" y="0" width="1000" height="680" fill="#f6f8fa"/>
+
+  <!-- left: worktrees -->
+  <rect class="box" x="24" y="112" width="180" height="70" rx="8"/>
+  <text class="p" x="114" y="141" font-size="16" font-weight="600" text-anchor="middle">Worktree A</text>
+  <text class="p s" x="114" y="163" font-size="12" text-anchor="middle">one branch, one session</text>
+
+  <rect class="box" x="24" y="212" width="180" height="70" rx="8"/>
+  <text class="p" x="114" y="241" font-size="16" font-weight="600" text-anchor="middle">Worktree B</text>
+  <text class="p s" x="114" y="263" font-size="12" text-anchor="middle">one branch, one session</text>
+
+  <!-- middle: hooks -->
+  <rect class="grp" x="256" y="52" width="420" height="304" rx="10"/>
+  <text class="p" x="466" y="80" font-size="16" font-weight="600" text-anchor="middle">Hooks (no daemon)</text>
+
+  <rect class="box" x="272" y="94" width="388" height="44" rx="6"/>
+  <text class="m" x="286" y="114" font-size="13" font-weight="700">Stop</text>
+  <text class="p s" x="286" y="131" font-size="12">compute the delta, upsert the receipt only if it moved</text>
+
+  <rect class="box" x="272" y="146" width="388" height="44" rx="6"/>
+  <text class="m" x="286" y="166" font-size="13" font-weight="700">SessionStart</text>
+  <text class="p s" x="286" y="183" font-size="12">fetch since the cursor, drain pending to stdout</text>
+
+  <rect class="box" x="272" y="198" width="388" height="44" rx="6"/>
+  <text class="m" x="286" y="218" font-size="13" font-weight="700">UserPromptSubmit</text>
+  <text class="p s" x="286" y="235" font-size="12">the same, throttled to one fetch per 120 s</text>
+
+  <rect class="box" x="272" y="250" width="388" height="44" rx="6"/>
+  <text class="m" x="286" y="270" font-size="13" font-weight="700">PermissionRequest</text>
+  <text class="p s" x="286" y="287" font-size="12">evaluate the policy, log, answer allow or deny</text>
+
+  <rect class="box" x="272" y="302" width="388" height="44" rx="6"/>
+  <text class="m" x="286" y="322" font-size="13" font-weight="700">SessionEnd</text>
+  <text class="p s" x="286" y="339" font-size="12">record which session ended, so a run can be resumed</text>
+
+  <!-- store -->
+  <rect class="box" x="256" y="420" width="420" height="152" rx="10"/>
+  <text class="m" x="466" y="446" font-size="14" font-weight="700" text-anchor="middle">.dkm/ (shared store)</text>
+  <text class="m" x="286" y="472" font-size="12">policy.toml</text>
+  <text class="m" x="286" y="492" font-size="12">bindings.json</text>
+  <text class="m" x="286" y="512" font-size="12">cursor.json</text>
+  <text class="m" x="480" y="472" font-size="12">pending/</text>
+  <text class="m" x="480" y="492" font-size="12">decisions.jsonl</text>
+  <text class="m" x="480" y="512" font-size="12">last-emit.json</text>
+  <text class="m" x="286" y="532" font-size="12">revivals.jsonl</text>
+  <text class="m" x="480" y="532" font-size="12">last-session.json</text>
+  <text class="p s" x="466" y="558" font-size="11.5" text-anchor="middle">resolved via --git-common-dir, so every worktree shares one store</text>
+
+  <!-- right -->
+  <rect class="box" x="728" y="96" width="240" height="76" rx="8"/>
+  <text class="p" x="848" y="126" font-size="15" font-weight="600" text-anchor="middle">GitHub work item</text>
+  <text class="p s" x="848" y="148" font-size="12" text-anchor="middle">one receipt comment, edited in place</text>
+
+  <rect class="box" x="728" y="240" width="240" height="76" rx="8"/>
+  <text class="p" x="848" y="270" font-size="15" font-weight="600" text-anchor="middle">The human</text>
+  <text class="p s" x="848" y="292" font-size="12" text-anchor="middle">sees only what policy did not</text>
+  <text class="p s" x="848" y="307" font-size="12" text-anchor="middle">already answer</text>
+
+  <!-- arrows -->
+  <path class="ln" d="M204 147 L250 147"/>
+  <path class="ln" d="M204 247 L250 247"/>
+  <path class="ln" d="M466 356 L466 414"/>
+  <path class="ln" d="M466 414 L466 356"/>
+  <path class="ln" d="M660 116 L724 124"/>
+  <text class="p s" x="692" y="107" font-size="12" text-anchor="middle">publish</text>
+  <path class="ln" d="M728 158 L664 176"/>
+  <text class="p s" x="700" y="192" font-size="12" text-anchor="middle">cursored pull</text>
+  <path class="ln" d="M680 272 L724 272"/>
+  <text class="p s" x="703" y="262" font-size="12" text-anchor="middle">ask (default)</text>
+
+  <text class="p s" x="500" y="632" font-size="13" text-anchor="middle">Nothing runs between hook firings, so nothing can die silently and leave a stale inbox looking healthy.</text>
+</svg>

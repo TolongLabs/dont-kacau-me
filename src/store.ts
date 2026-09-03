@@ -14,6 +14,8 @@ import type {
   LastEmitFile,
   PendingEvent,
   Receipt,
+  ResumeTicket,
+  RevivalRecord,
   WorkItemRef
 } from './types'
 
@@ -363,6 +365,38 @@ export function drainPending(root: string): PendingEvent[] {
 export function appendDecision(root: string, rec: DecisionRecord): void {
   mkdirSync(dkmPath(root), { recursive: true })
   appendFileSync(join(dkmPath(root), 'decisions.jsonl'), `${JSON.stringify(rec)}\n`, 'utf8')
+}
+
+/**
+ * The revival log is separate from `decisions.jsonl` on purpose. A decision records what an agent
+ * was allowed to do; this records why a run paused and when it came back, which is operational
+ * history and must not dilute the permission audit the human reads.
+ */
+export function writeResumeTicket(root: string, ticket: ResumeTicket): void {
+  mkdirSync(dkmPath(root), { recursive: true })
+  atomicWrite(join(dkmPath(root), 'last-session.json'), JSON.stringify(ticket))
+}
+
+export function readResumeTicket(root: string): ResumeTicket | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(dkmPath(root), 'last-session.json'), 'utf8'))
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const t = parsed as Record<string, unknown>
+    if (typeof t.sessionId !== 'string' || typeof t.cwd !== 'string') return null
+    return {
+      sessionId: t.sessionId,
+      cwd: t.cwd,
+      reason: typeof t.reason === 'string' ? t.reason : 'unknown',
+      endedAt: typeof t.endedAt === 'string' ? t.endedAt : ''
+    }
+  } catch {
+    return null
+  }
+}
+
+export function appendRevival(root: string, rec: RevivalRecord): void {
+  mkdirSync(dkmPath(root), { recursive: true })
+  appendFileSync(join(dkmPath(root), 'revivals.jsonl'), `${JSON.stringify(rec)}\n`, 'utf8')
 }
 
 export function readDecisions(root: string): DecisionRecord[] {

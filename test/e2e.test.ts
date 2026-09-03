@@ -503,6 +503,27 @@ test('10b. a followed item arrives as a contract delta, not a headline', () => {
   }
 })
 
+test('12. session-end leaves a ticket naming the session that just ended', () => {
+  const root = makeRepo()
+  try {
+    const env = setupForTest(root, {})
+    const r = runHook(
+      'session-end',
+      root,
+      { session_id: 'sess-42', cwd: root, hook_event_name: 'SessionEnd', reason: 'other' },
+      env
+    )
+    expect(r.status).toBe(0)
+    const ticket = asRecord(readJson(root, 'last-session.json'))
+    expect(ticket.sessionId).toBe('sess-42')
+    // The reason is recorded as the harness gave it. A hook cannot tell a usage limit from a clean
+    // exit, and guessing at one is how a supervisor would resume a session nobody wanted resumed.
+    expect(ticket.reason).toBe('other')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 const HOOKS = ['stop', 'session-start', 'user-prompt-submit', 'permission-request'] as const
 
 for (const hook of HOOKS) {

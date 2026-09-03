@@ -145,7 +145,7 @@ test('an unknown command exits non-zero and names the valid ones', () => {
   try {
     const r = cli(root, ['frobnicate'], envFor(root, {}))
     expect(r.status).toBe(1)
-    expect(r.stderr).toContain('bind, follow, unfollow, note, blocker, status')
+    expect(r.stderr).toContain('bind, follow, unfollow, note, blocker, revive, status')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

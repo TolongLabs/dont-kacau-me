@@ -51,6 +51,10 @@ test('every declared hook event is one the harness actually emits', () => {
     'WorktreeRemove',
     'PreToolUse',
     'PostToolUse',
+    'PostToolBatch',
+    'SubagentStop',
+    'PreCompact',
+    'SessionEnd',
     'Notification'
   ]
   const declared = readJson('hooks/hooks.json') as { hooks: Record<string, unknown> }

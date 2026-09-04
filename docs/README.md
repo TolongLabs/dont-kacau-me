@@ -2,12 +2,12 @@
 
 # Don't Kacau Me
 
-![Bun](https://img.shields.io/badge/Bun-runtime-000000?logo=bun&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![Biome](https://img.shields.io/badge/Biome-lint_%26_format-60A5FA?logo=biome&logoColor=white)
-![Claude Code plugin](https://img.shields.io/badge/Claude_Code-plugin-D97757)
-![MIT licence](https://img.shields.io/badge/licence-MIT-blue)
-![Version](https://img.shields.io/badge/version-0.3.0-informational)
+![Claude Code plugin](https://img.shields.io/badge/Claude_Code_Plugin-D97757?style=for-the-badge&logo=claude&logoColor=white)
+![Bun](https://img.shields.io/badge/Bun_runtime-000000?style=for-the-badge&logo=bun&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
+![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.3.0-informational?style=for-the-badge)
 
 **A Claude Code plugin that stops your AI coding sessions from interrupting you.**
 

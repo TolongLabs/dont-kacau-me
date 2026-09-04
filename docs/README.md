@@ -134,9 +134,8 @@ prompts can disappear while that one still reaches the human.
 
 ## Architecture
 
-DKM coordinates sessions through Claude Code hooks and has no daemon. Receipt, ingest and permission work begins on a
-hook firing and never calls a model. The optional usage-limit supervisor is a foreground CLI process rather than part of
-the hook path.
+DKM coordinates sessions through Claude Code hooks and has no daemon. Hook-driven receipt, ingest and permission work
+never calls a model; the optional usage-limit supervisor is a foreground CLI process.
 
 ![DKM architecture: two worktrees feed short-lived hooks, shared DKM state publishes a receipt to a GitHub work item, and policy leaves unmatched prompts to the human](assets/architecture.svg)
 
@@ -153,17 +152,10 @@ This section stays at the system-narrative level. Implementation contracts and r
 | `PermissionRequest` | Evaluate policy, append a record and emit or defer      | Execute a prior grant or leave the prompt to human |
 | `SessionEnd`        | Record the supplied session details                     | Leave a diagnostic resume ticket on disk           |
 
-`Stop` means the agent finished a response, not that its work is done. After the initial baseline, the emit hook
-produces no receipt when tracked state is unchanged.
-
-DKM does not register a worktree lifecycle hook. Binding is an explicit command, so the user chooses the GitHub item a
-worktree owns.
-
-When policy does not grant or deny a request, DKM leaves the prompt to the human. A handler failure takes the same human
-path.
-
-Delivery is pull-based. A session receives queued context when it starts or submits a prompt, not when another session
-publishes a receipt.
+- `Stop` ends a response, not the work; after the baseline, unchanged tracked state produces no receipt.
+- DKM registers no worktree lifecycle hook. Explicit binding lets the user choose the GitHub item a worktree owns.
+- An unmatched permission or handler failure leaves the prompt to the human.
+- Pull-based delivery injects queued context on session start or prompt submission, not when another session publishes.
 
 ### Receipt delivery and tracking
 
@@ -175,15 +167,16 @@ A signal is queued only at the finest tier that claims it for one recipient and 
 | **Followed** | Work items this session declared a dependency on         | The same receipt summary, labelled `followed`              |
 | **Ambient**  | Other issues and PRs updated since the repository cursor | Headline and URL                                           |
 
-The current GitHub query returns updated issues and PRs. DKM discards body fields before it builds a pending event; it
-does not implement separate @mention or base-branch CI feeds. Raw commits are not an ambient signal.
+- The current GitHub query returns updated issues and PRs; raw commits are not an ambient signal.
+- DKM discards body fields before building a pending event.
+- Separate @mention and base-branch CI feeds are not implemented.
 
 ### The receipt schema
 
 ![Receipt flow: session A finishes a turn, the Stop hook writes a baseline or tracked delta, and session B pulls that receipt context on its next start or prompt](assets/receipt-flow.svg)
 
-DKM targets one mutable GitHub comment per work item. Receipt content has three trust levels, keeping repository
-evidence structurally separate from agent narrative.
+DKM edits one GitHub comment per work item in place instead of appending comments. Three trust levels keep repository
+evidence separate from agent narrative.
 
 | Kind           | Source                                  | How to treat                                          |
 | -------------- | --------------------------------------- | ----------------------------------------------------- |
@@ -217,11 +210,11 @@ neither the pending-event store nor the GitHub client.
 `PermissionRequest` evaluates:
 
 1. Mechanical blast-radius rules.
-1. Explicit policy allow rules.
-1. The default human path for anything unmatched.
+1. Explicit policy allow rules for paths, tools and commands granted in advance.
+1. The default human path for anything unmatched: `ask`.
 
-The blast-radius table is mechanical rather than a model's assessment. `.dkm/` is protected because an agent that can
-edit its own grant can widen its authority without anyone deciding to.
+The table is mechanical rather than model-assessed because agents are poor at self-assessing risk. `.dkm/` is protected
+because an agent that can edit its grant can widen that authority without anyone deciding to.
 
 | Recognised input                                                           | Result  |
 | -------------------------------------------------------------------------- | ------- |
@@ -244,15 +237,20 @@ A long run can end at the account's usage limit. From the plugin clone, start it
 bun src/cli.ts revive "work through issue 12" -- --effort high
 ```
 
-When a run stops on a recognised limit, the supervisor reads the reported reset time. A reset up to six hours away gets
-a 30-second cushion; a later reset is rechecked after six hours. A missing or past time uses capped exponential backoff.
+On a recognised limit, the supervisor reads the reported reset and resumes the same session by ID instead of replaying
+the original prompt.
 
-The supervisor resumes the same session by ID rather than replaying the original prompt. A genuine error stops. A limit
-without a session ID also stops because replaying the prompt could repeat completed work. No code path changes
-credentials or account.
+| Situation                      | Supervisor action                                  |
+| ------------------------------ | -------------------------------------------------- |
+| Reset up to six hours away     | Wait until reset with a 30-second cushion          |
+| Reset more than six hours away | Recheck after six hours                            |
+| Missing or past reset time     | Use capped exponential backoff                     |
+| Genuine error                  | Stop                                               |
+| Limit without a session ID     | Stop because replaying could repeat completed work |
 
-Every wait is appended to `.dkm/revivals.jsonl`; completion and failure are recorded there too. The supervisor is an
-opt-in foreground process, and nothing runs in the background after it exits.
+Every wait, completion and failure is recorded in `.dkm/revivals.jsonl`. No code path changes credentials or account.
+
+> **Optional — supervisor.** This opt-in process runs only in the foreground; nothing remains active after it exits.
 
 ## Tech stack
 
@@ -269,56 +267,63 @@ opt-in foreground process, and nothing runs in the background after it exits.
 
 ## Getting started
 
+Install DKM from a stable clone, commit the authority policy, then bind a worktree to its GitHub item.
+
 ### Prerequisites
 
 - [Claude Code installed and authenticated](https://code.claude.com/docs/en/plugins).
 - A git repository with GitHub work items and an authenticated `gh` CLI.
 - [Bun](https://bun.sh/) for the plugin runtime and development tooling.
 
-### Installation
+### 1. Clone — choose a stable path
 
-1. Clone the repository to a stable local path:
+```bash
+git clone https://github.com/TolongLabs/dont-kacau-me.git
+```
 
-   ```bash
-   git clone https://github.com/TolongLabs/dont-kacau-me.git
-   ```
+### 2. Prepare — install the tooling
 
-1. Install the development tooling. The package prepare script runs Husky, although this repository has no project
-   `pre-commit` or `commit-msg` hook script:
+The package prepare script runs Husky, although this repository has no project `pre-commit` or `commit-msg` hook script.
 
-   ```bash
-   bun install
-   ```
+```bash
+bun install
+```
 
-1. Install the plugin. From the clone, the trailing slash matters because a bare `.` is rejected:
+### 3. Install — add the plugin
 
-   ```bash
-   claude plugin marketplace add ./
-   claude plugin install dont-kacau-me@tolonglabs
-   ```
+From the clone, add its marketplace and install DKM. The trailing slash matters because a bare `.` is rejected.
 
-   To load it for one session without marketplace installation, run this from the clone:
+```bash
+claude plugin marketplace add ./
+claude plugin install dont-kacau-me@tolonglabs
+```
 
-   ```bash
-   claude --plugin-dir "$(pwd)"
-   ```
+> **Optional — one-session trial.** Load the clone without a marketplace installation:
 
-   Claude Code reads:
+```bash
+claude --plugin-dir "$(pwd)"
+```
 
-   - the manifest from `.claude-plugin/plugin.json`
-   - hook declarations from `hooks/hooks.json`
-   - slash commands from `commands/`
+| Claude Code source | Path                         |
+| ------------------ | ---------------------------- |
+| Manifest           | `.claude-plugin/plugin.json` |
+| Hook declarations  | `hooks/hooks.json`           |
+| Slash commands     | `commands/`                  |
 
-1. Write and commit `.dkm/policy.toml` in the repository where DKM will run. It is the human grant; do not copy a policy
-   whose authority you do not intend to delegate.
+The [`--plugin-dir` workflow](https://code.claude.com/docs/en/plugins) loads the local plugin without installing it.
 
-1. Bind the worktree to its receipt's work item:
+### 4. Grant — write the policy
 
-   ```bash
-   /dont-kacau-me:dkm-bind 81
-   ```
+Write and commit `.dkm/policy.toml` in the repository where DKM will run. It is the human grant; do not copy authority
+you do not intend to delegate.
 
-Claude Code namespaces plugin commands, so DKM commands use `/dont-kacau-me:<command>`. There is no daemon to start.
+### 5. Bind — name the receipt's work item
+
+```bash
+/dont-kacau-me:dkm-bind 81
+```
+
+Claude Code namespaces DKM commands as `/dont-kacau-me:<command>`. There is no daemon to start.
 
 ## Configuration
 

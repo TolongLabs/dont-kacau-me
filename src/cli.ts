@@ -70,6 +70,12 @@ function status(root: string): string {
 function main(): void {
   const [command, ...rest] = process.argv.slice(2)
   const root = repoRoot(process.cwd())
+  if (root === null && command === 'init') {
+    // The first thing a new user runs, so it must name the fix rather than the symptom.
+    fail(
+      'not a git repository yet. DKM keys its state to a worktree path, so run `git init` here (or cd into your\nrepository) and run this again.'
+    )
+  }
   if (root === null) fail('not inside a git worktree')
 
   if (command === 'bind') {

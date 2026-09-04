@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
 ![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/v0.4.1-informational?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.4.2-informational?style=for-the-badge)
 
 **A Claude Code plugin that stops your AI coding sessions from interrupting you.**
 

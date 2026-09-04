@@ -11,11 +11,22 @@ function run(command: string, args: string[], cwd: string): { ok: boolean; out: 
 }
 
 /**
+ * Separate from `preflight` so it can be exercised without the `gh` calls, which reach the network
+ * and cost seconds apiece.
+ */
+export function gitCheck(root: string): Check {
+  const git = run('git', ['rev-parse', '--show-toplevel'], root)
+  return { name: 'git repository', ok: git.ok, detail: git.ok ? git.out : 'run: git init' }
+}
+
+/**
  * Every failing check carries the command that fixes it. A preflight that only reports a missing
  * dependency leaves the reader to search for the fix, which is the moment most people give up.
  */
 export function preflight(root: string): Check[] {
   const checks: Check[] = []
+
+  checks.push(gitCheck(root))
 
   const bun = run('bun', ['--version'], root)
   checks.push({ name: 'bun', ok: bun.ok, detail: bun.ok ? bun.out : 'install it from https://bun.sh' })
@@ -145,9 +156,25 @@ export function runInit(root: string, force: boolean, checks: Check[] = prefligh
     '  and writes to a lockfile, package.json, .env or .dkm/',
     '',
     'Next:',
-    `  1. read ${target} and delete anything you did not mean to grant`,
-    '  2. commit it',
-    '  3. /dont-kacau-me:dkm-bind <issue-number> to publish receipts to a GitHub item'
+    `  1. Read ${target} and delete anything you did not mean to grant, then commit it.`,
+    '  2. Keep working. Prompts you granted stop arriving in this session; nothing else to do.',
+    '',
+    'When you want a second piece of work running at the same time:',
+    '  Give it its own worktree, not a second session in this directory. A worktree is a second',
+    '  checkout you can work in simultaneously, and DKM keys everything to its path:',
+    '',
+    '    git worktree add ../<name> -b <branch>',
+    '',
+    '  Open Claude Code there, then bind each one to the item it owns:',
+    '',
+    '    /dont-kacau-me:dkm-bind <issue-number>',
+    '',
+    '  Receipts then publish to those items, and /dont-kacau-me:dkm-follow <n> in one worktree',
+    "  brings the other one's contract changes into it. Binding needs an authenticated gh and a",
+    '  GitHub remote; everything above this line does not.',
+    '',
+    '  Two sessions in one directory share a single queue and will race for the same events, so',
+    '  give each its own worktree.'
   )
   return { output: `${lines.join('\n')}\n`, wrote }
 }

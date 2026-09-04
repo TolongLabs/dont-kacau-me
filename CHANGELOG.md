@@ -8,6 +8,17 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-09-04
+
+### Added
+
+- `dkm init` checks that the directory is a git repository, and says `git init` when it is not. Run outside a repository
+  the command previously failed with `not inside a git worktree`, which names the symptom rather than the fix.
+- `dkm init` now says what to do after the policy is written, which was the question a first-run tester asked. The
+  answer is a **second worktree**, not a second session in the same directory: recipients are keyed on worktree path and
+  draining unlinks the event, so two sessions in one directory share a queue and race for the same events. The output
+  gives the `git worktree add` line, the bind and follow commands, and says which steps need `gh`.
+
 ## [0.4.1] — 2026-09-04
 
 ### Added
@@ -148,6 +159,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.4.2]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.2.0...v0.3.0

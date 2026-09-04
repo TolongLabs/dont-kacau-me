@@ -42,19 +42,64 @@ function stripQuotes(token: string): string {
   return token
 }
 
-function collectPathCandidates(toolInput: unknown): string[] {
+/**
+ * Keys whose value designates a filesystem target. Matched case-insensitively at any depth, so
+ * `edits: [{ file_path }]` and `paths: [...]` are both reached.
+ */
+const PATH_KEYS = new Set([
+  'file_path',
+  'filepath',
+  'notebook_path',
+  'notebookpath',
+  'path',
+  'paths',
+  'target_file',
+  'destination',
+  'dest',
+  'output_path',
+  'filename',
+  'file',
+  'dir',
+  'directory',
+  'cwd'
+])
+
+/**
+ * Paths come from fields that name a file, never from prose. Scanning every string in a payload,
+ * and every whitespace token inside it, let a tool's wording decide a permission: a WebSearch for
+ * "/etc/hosts", a todo mentioning "/usr/local" and an AskUserQuestion offering "/dkm-init" were all
+ * denied outright, and `outside-worktree` is the one trip with no human fallback.
+ *
+ * Narrowing this grants nothing. A tool that yields no candidate does not trip the rule, then meets
+ * the allow rules and, unmatched, lands on `ask`. Every tool that can actually write either is Bash,
+ * whose command text is scanned whole, or names its target in one of these fields.
+ */
+function pathCandidates(input: DecisionInput): string[] {
   const seen = new Set<string>()
   const add = (s: string): void => {
     const v = s.trim()
     if (v === '') return
     seen.add(v)
   }
-  for (const str of extractStrings(toolInput)) {
-    add(str)
-    for (const token of str.split(/\s+/)) {
-      add(stripQuotes(token))
+  if (input.toolName === 'Bash') {
+    for (const str of extractStrings(input.toolInput)) {
+      add(str)
+      for (const token of str.split(/\s+/)) {
+        add(stripQuotes(token))
+      }
+    }
+    return [...seen]
+  }
+  const walk = (value: unknown, key: string | null): void => {
+    if (typeof value === 'string') {
+      if (key !== null && PATH_KEYS.has(key.toLowerCase())) add(stripQuotes(value))
+    } else if (Array.isArray(value)) {
+      for (const item of value) walk(item, key)
+    } else if (value !== null && typeof value === 'object') {
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k)
     }
   }
+  walk(input.toolInput, null)
   return [...seen]
 }
 
@@ -66,7 +111,7 @@ function isUnder(resolved: string, worktree: string): boolean {
 }
 
 function isOutsideWorktree(input: DecisionInput): boolean {
-  for (const candidate of collectPathCandidates(input.toolInput)) {
+  for (const candidate of pathCandidates(input)) {
     const resolved = path.resolve(input.cwd, candidate)
     if (!isUnder(resolved, input.worktreePath)) return true
   }
@@ -104,7 +149,7 @@ function isDataLoss(input: DecisionInput): boolean {
   for (const str of extractStrings(input.toolInput)) {
     if (isRmRf(str) || hasDestructiveSql(str)) return true
   }
-  for (const candidate of collectPathCandidates(input.toolInput)) {
+  for (const candidate of pathCandidates(input)) {
     const resolved = path.resolve(input.cwd, candidate)
     for (const part of resolved.split(path.sep)) {
       const lower = part.toLowerCase()
@@ -145,7 +190,7 @@ function isEgress(input: DecisionInput): boolean {
  * thing the authority principle forbids. Reaching the human is the whole point, so this is `ask`.
  */
 function isSurface(input: DecisionInput): boolean {
-  for (const candidate of collectPathCandidates(input.toolInput)) {
+  for (const candidate of pathCandidates(input)) {
     const resolved = path.resolve(input.cwd, candidate)
     const base = path.basename(resolved)
     if (SURFACE_FILES.has(base)) return true
@@ -170,7 +215,7 @@ function globMatch(value: string, pattern: string): boolean {
 
 function collectRelativePaths(input: DecisionInput): string[] {
   const out: string[] = []
-  for (const candidate of collectPathCandidates(input.toolInput)) {
+  for (const candidate of pathCandidates(input)) {
     const resolved = path.resolve(input.cwd, candidate)
     if (isUnder(resolved, input.worktreePath)) {
       const rel = path.relative(input.worktreePath, resolved)

@@ -404,7 +404,7 @@ permission matching.
 
 | Trip               | Decision | Predicate in `src/decide.ts`                                                                                         |
 | ------------------ | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `outside-worktree` | `deny`   | Any recursively found string or whitespace token resolves outside `worktreePath`                                     |
+| `outside-worktree` | `deny`   | A path-designating field, or any `Bash` command token, resolves outside `worktreePath`                               |
 | `data-loss`        | `ask`    | Recursive forced `rm`, destructive SQL substring, or a resolved path segment equal to `migrations` or `drizzle`      |
 | `money`            | `ask`    | `npm publish`, `bun publish`, `vercel deploy` or `gh release create`                                                 |
 | `egress`           | `ask`    | `curl`, `wget`, `git push`, selected deploy commands, selected `gh` creates/comments or `gh api ... -X <write verb>` |
@@ -442,10 +442,25 @@ The surface filenames are:
 
 The implementation does not inspect TypeScript exports or otherwise detect a general exported API surface.
 
-`collectPathCandidates()` recursively extracts every string from `tool_input`, then adds each whitespace-separated
-token. `outside-worktree`, data-loss path checks and surface checks all operate on that candidate set. This is
-intentionally an exact description: the engine does not distinguish a path field from an arbitrary string before
-resolving candidates.
+`pathCandidates()` produces the candidate set that `outside-worktree`, the data-loss path check, the surface check and
+`rule.paths` all operate on. It is tool-aware:
+
+- For `Bash`, every string and every whitespace-separated token, because a command's text is its path list.
+- For every other tool, only string values whose key names a filesystem target: `file_path`, `path`, `paths`,
+  `notebook_path`, `destination`, `filename` and the rest of `PATH_KEYS`, matched case-insensitively at any depth so
+  `edits: [{ file_path }]` is reached.
+
+Earlier revisions scanned every string in `tool_input`, which let a tool's prose decide a permission: a `WebSearch` for
+`/etc/hosts`, a todo mentioning `/usr/local` and an `AskUserQuestion` offering `/dkm-init` were denied outright, and
+`outside-worktree` is the one trip with no human fallback.
+
+Narrowing this grants nothing. A tool yielding no candidate does not trip the rule, then meets the allow rules and,
+unmatched, falls to `ask`. A tool that writes to a path either is `Bash` or names its target in one of those fields; a
+writing tool that does neither reaches the human rather than being denied.
+
+The command-pattern predicates behind `money`, `egress` and the `rm`/SQL half of `data-loss` still read every string in
+`tool_input`, so prose containing `deploy` or `delete from` trips them. Each returns `ask`, so the effect is a redundant
+prompt rather than a failure.
 
 ### Allow-rule evaluation
 

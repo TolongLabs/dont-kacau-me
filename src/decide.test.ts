@@ -115,3 +115,54 @@ test('decide.ts never reads inbound state', () => {
   expect(source).not.toMatch(/\.dkm\/pending/)
   expect(source).not.toMatch(/readFileSync|readFile|fetch\(|spawnSync/)
 })
+
+function tool(toolName: string, toolInput: unknown): DecisionInput {
+  return { sessionId: 's1', cwd: WORKTREE, worktreePath: WORKTREE, toolName, toolInput }
+}
+
+test('prose that mentions an absolute path is not a filesystem access', () => {
+  // These were denied outright, and outside-worktree is the one trip with no human fallback: the
+  // call simply fails. A search query, a todo and a question are text, not a path.
+  expect(decide(tool('WebSearch', { query: 'best practices for /etc/hosts' }), EMPTY_POLICY).decision).toBe('ask')
+  expect(
+    decide(tool('TodoWrite', { todos: [{ content: 'document the /usr/local path' }] }), EMPTY_POLICY).decision
+  ).toBe('ask')
+  expect(
+    decide(tool('AskUserQuestion', { questions: [{ options: [{ description: 'add /dkm-init' }] }] }), EMPTY_POLICY)
+      .decision
+  ).toBe('ask')
+})
+
+test('file content is not a path, however it reads', () => {
+  const input = tool('Write', { file_path: `${WORKTREE}/src/notes.md`, content: 'we should never touch /etc/passwd' })
+  expect(decide(input, EMPTY_POLICY).trip).toBe(null)
+})
+
+test('a structured path field outside the worktree is still denied', () => {
+  expect(decide(write('/etc/passwd'), EMPTY_POLICY).decision).toBe('deny')
+  expect(decide(tool('NotebookEdit', { notebook_path: '/tmp/x.ipynb' }), EMPTY_POLICY).decision).toBe('deny')
+})
+
+test('a nested edit target outside the worktree is still denied', () => {
+  // Reached through an array under `edits`, which a shallow field read would miss.
+  const input = tool('MultiEdit', { edits: [{ file_path: `${WORKTREE}/src/a.ts` }, { file_path: '/etc/hosts' }] })
+  expect(decide(input, EMPTY_POLICY).decision).toBe('deny')
+})
+
+test('bash still has its whole command scanned for paths', () => {
+  // The command text genuinely is the path list, so token scanning stays.
+  expect(decide(bash('cat /etc/passwd'), EMPTY_POLICY).decision).toBe('deny')
+  expect(decide(bash('sed -i s/x/y/ .dkm/policy.toml'), EMPTY_POLICY).rule).toBe('blast:surface')
+})
+
+test('a prose field whose whole value is a path is still prose', () => {
+  // The exact shape that was denied live: an option label that is just the slash command it offers.
+  // A test whose prose merely contains a path passes even without the key allowlist, because the
+  // surrounding words make the string resolve relative to the worktree.
+  const question = tool('AskUserQuestion', { questions: [{ options: [{ label: '/dkm-init' }] }] })
+  expect(decide(question, EMPTY_POLICY).decision).toBe('ask')
+  expect(decide(tool('WebSearch', { query: '/etc/hosts' }), EMPTY_POLICY).decision).toBe('ask')
+
+  const write = tool('Write', { file_path: `${WORKTREE}/src/a.ts`, content: '/etc/passwd' })
+  expect(decide(write, EMPTY_POLICY).trip).toBe(null)
+})

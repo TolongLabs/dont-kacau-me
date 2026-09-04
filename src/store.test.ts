@@ -228,3 +228,24 @@ test('decisions jsonl append and skip bad lines', () => {
   appendFileSync(target, 'not json\n')
   expect(readDecisions(tmpDir)).toEqual([d1, d2])
 })
+
+test('a missing file yields a fresh object, not the shared fallback', () => {
+  // The fallback used to be handed out by reference, so a caller that mutated what it read poisoned
+  // the next read for a different repository in the same process.
+  const other = mkdtempSync(join(tmpdir(), 'dkm-store-other-'))
+  try {
+    const first = readCursors(tmpDir)
+    first.cursors.R_leak = '2026-01-01T00:00:00Z'
+    expect(readCursors(other).cursors).toEqual({})
+
+    const bindings = readBindings(tmpDir)
+    bindings.bindings.push(sampleBinding())
+    expect(readBindings(other).bindings).toEqual([])
+
+    const emit = readLastEmit(tmpDir)
+    emit.emitted.leaked = { head: 'x', blockers: [], checksFingerprint: '', commentId: '1', decisionOffset: 0 }
+    expect(readLastEmit(other).emitted).toEqual({})
+  } finally {
+    rmSync(other, { recursive: true, force: true })
+  }
+})

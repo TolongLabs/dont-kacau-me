@@ -300,13 +300,14 @@ The subsections below stay at the system-narrative level. Implementation contrac
 | Hook event          | DKM action                                              | Observable result                                  |
 | ------------------- | ------------------------------------------------------- | -------------------------------------------------- |
 | `Stop`              | Publish a baseline, then compare later tracked state    | Update one receipt only after a tracked delta      |
-| `SessionStart`      | Pull repository updates and drain this worktree's queue | Inject available context when a session starts     |
+| `SessionStart`      | Pull repository updates and drain this worktree's queue | Inject available context, and a hint if unbound    |
 | `UserPromptSubmit`  | Run the same pull with a rate limit, then drain         | Inject available context on a later prompt         |
 | `PermissionRequest` | Evaluate policy, append a record and emit or defer      | Execute a prior grant or leave the prompt to human |
 | `SessionEnd`        | Record the supplied session details                     | Leave a diagnostic resume ticket on disk           |
 
 - `Stop` ends a response, not the work; after the baseline, unchanged tracked state produces no receipt.
 - DKM registers no worktree lifecycle hook. Explicit binding lets the user choose the GitHub item a worktree owns.
+- An unbound worktree publishes nothing, so `SessionStart` says so once, and only where a policy file exists.
 - An unmatched permission or handler failure leaves the prompt to the human.
 - Pull-based delivery injects queued context on session start or prompt submission, not when another session publishes.
 

@@ -290,6 +290,11 @@ describe it is incomplete.
 If any condition cannot be verified, leave the PR open and report the blocker. Direct and force pushes to `main` remain
 forbidden. Never use `--admin` or `--auto` to override or defer the gate. Small fixes still go through a branch.
 
+**Bump the version in the same PR as any user-facing change.** `claude plugin update` compares versions and refuses when
+they match, so a fix merged without a bump reaches nobody: the installed copy keeps serving the old code from
+`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`. A command-file fix shipped this way sat unreachable until a
+bump released it. `test/plugin.test.ts` already asserts the manifest, the marketplace entry and the changelog agree.
+
 **TODOs live in GitHub Issues**, not a markdown checklist and not a code comment. A checklist in a file goes stale,
 conflicts on merge, and is invisible to anyone not in that file. Reference the issue in the PR so merging closes it:
 `Closes #12`. A short-lived, in-session task list is fine; anything that outlives the session is not.

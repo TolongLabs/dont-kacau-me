@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
 ![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/v0.4.0-informational?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.4.1-informational?style=for-the-badge)
 
 **A Claude Code plugin that stops your AI coding sessions from interrupting you.**
 
@@ -92,6 +92,24 @@ You write a small file, `.dkm/policy.toml`, saying what you have already decided
 under `src/` is fine._ Those prompts stop reaching you.
 
 Every decision made on your behalf is logged, so you can read back exactly what happened while you slept.
+
+### What about `--dangerously-skip-permissions`?
+
+It solves the same annoyance by removing the question rather than answering it, and a lot of people running several
+sessions already use it. The difference is what happens to the prompts you did **not** want to skip.
+
+|                                           | `--dangerously-skip-permissions` | A DKM policy                               |
+| ----------------------------------------- | -------------------------------- | ------------------------------------------ |
+| Routine prompts                           | gone                             | gone                                       |
+| `rm -rf`, `git push`, a migration, `.env` | **also gone**                    | still stop you                             |
+| A write outside this worktree             | **allowed**                      | denied                                     |
+| What was decided while you slept          | nothing recorded                 | every decision, with the rule that made it |
+
+**DKM only decides when Claude Code asks it to.** A session that answers its own prompts never sends DKM the question,
+so a committed policy sits unused. That covers `--dangerously-skip-permissions` and any non-asking `--permission-mode`,
+including one set as `permissions.defaultMode` in your settings, which applies to every session you start.
+
+Since v0.4.1 a session in one of those modes says so at startup rather than looking like a policy that is working.
 
 ## The rule that keeps this safe
 

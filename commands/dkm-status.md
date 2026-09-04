@@ -5,5 +5,8 @@ allowed-tools: Bash(bun:*)
 
 Run: `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts status`
 
-Show the output verbatim. Then, in at most two sentences, say whether anything looks like it needs the human:
-undelivered pending events, or decisions whose rule begins `blast:`.
+**The human cannot see that command's output**, because the harness collapses it. Reproduce it in your reply: what the
+worktree is bound to, what it follows, how many events are undelivered, and the recent decisions with their rules.
+
+Then, in at most two sentences, say whether anything needs them: undelivered pending events, or decisions whose rule
+begins `blast:`.

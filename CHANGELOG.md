@@ -8,6 +8,26 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-09-04
+
+### Added
+
+- A `SessionStart` line naming the session's permission mode when that mode answers its own prompts, because a policy is
+  inert in one and nothing said so. A first-run test under `--dangerously-skip-permissions` recorded no decision at all
+  while every other hook fired, and the absence of prompts reasonably read as the policy working. Shown only where a
+  policy file exists. `manual` and `plan` are treated as the asking modes; the rest are named rather than classified,
+  since which of them suppress the event is the harness's contract to state.
+- A README subsection comparing a DKM policy with `--dangerously-skip-permissions`, which removes the question rather
+  than answering it.
+
+### Fixed
+
+- Slash commands no longer assume the human can read a command's stdout. Claude Code collapses a Bash result to one
+  line, so `dkm-init` printed the entire onboarding — the failed check, the grant, the next step — into a fold, and the
+  user saw `Ran 1 shell command` and asked what to do next. `dkm-init`, `dkm-status` and `dkm-note` now restate what
+  matters in the reply, and a packaging test rejects any command that tells the model to show output "verbatim"
+  ([#32](https://github.com/TolongLabs/dont-kacau-me/issues/32)).
+
 ## [0.4.0] — 2026-09-04
 
 ### Added
@@ -39,13 +59,6 @@ those are called out under **Changed** with the word **Breaking**.
   repository directly. Getting started now leads with the policy half, which works in one session with no GitHub issue.
 - The commands table no longer lists `dkm revive` as though it were typeable. There is no `dkm` binary; the supervisor
   is started as `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts revive`, as the section below the table already showed.
-
-### Fixed
-
-- Slash commands no longer assume the human can read a command's stdout. Claude Code collapses a Bash result to one
-  line, so `dkm-init` printed the entire onboarding — the failed check, the grant, the next step — into a fold, and the
-  user saw `Ran 1 shell command` and asked what to do next. `dkm-init`, `dkm-status` and `dkm-note` now restate what
-  matters in the reply, and a packaging test rejects any command that tells the model to show output "verbatim".
 
 ### Known limitations
 
@@ -135,6 +148,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.4.1]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.1.0...v0.2.0

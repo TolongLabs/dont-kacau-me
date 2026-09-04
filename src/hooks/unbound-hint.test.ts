@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { unboundHint } from './inject'
+import { permissionModeHint, unboundHint } from './inject'
 
 let tmpDir: string
 
@@ -48,4 +48,28 @@ test('a repository with no policy stays silent', () => {
   // Nobody opted this repository in. DKM must not advertise itself into it.
   bindings(null)
   expect(unboundHint(tmpDir)).toBe('')
+})
+
+test('a session that answers its own prompts is told the policy is not consulted', () => {
+  // The failure this catches is silent by construction: no prompts arrive, which looks exactly like
+  // a policy working. A first run under --dangerously-skip-permissions recorded no decision at all.
+  policy()
+  expect(permissionModeHint(tmpDir, 'bypassPermissions')).toContain('bypassPermissions')
+  expect(permissionModeHint(tmpDir, 'auto')).toContain('may never be consulted')
+})
+
+test('a mode that puts the question to the human is not warned about', () => {
+  policy()
+  expect(permissionModeHint(tmpDir, 'manual')).toBe('')
+  expect(permissionModeHint(tmpDir, 'plan')).toBe('')
+})
+
+test('a mode DKM was not told about is not guessed at', () => {
+  policy()
+  expect(permissionModeHint(tmpDir, undefined)).toBe('')
+})
+
+test('a repository with no policy is not warned about its mode', () => {
+  // Nobody opted this repository in, so its permission mode is not DKM's business.
+  expect(permissionModeHint(tmpDir, 'bypassPermissions')).toBe('')
 })

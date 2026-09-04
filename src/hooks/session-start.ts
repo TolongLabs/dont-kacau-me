@@ -1,7 +1,7 @@
-import { drainAndRender, ingest, unboundHint } from './inject'
+import { drainAndRender, ingest, permissionModeHint, unboundHint } from './inject'
 import { runHook } from './runtime'
 
-runHook((_payload, root) => {
+runHook((payload, root) => {
   ingest(root)
-  return `${unboundHint(root)}${drainAndRender(root)}`
+  return `${permissionModeHint(root, payload.permission_mode)}${unboundHint(root)}${drainAndRender(root)}`
 })

@@ -159,6 +159,24 @@ export function drainAndRender(root: string): string {
  * finds out days later that no receipt was ever written. Conditioned on the policy file, because a
  * repository the installer never opted into must stay silent.
  */
+/**
+ * DKM decides only when Claude Code asks it to. A session that answers its own prompts never emits
+ * `PermissionRequest`, so a committed policy is inert and nothing said so: a first-run test with
+ * `--dangerously-skip-permissions` wrote no decision record at all while every other hook fired, and
+ * the user reasonably read the absence of prompts as the policy working.
+ *
+ * `manual` and `plan` are the modes that put a question to the human. The rest are named rather than
+ * classified, because which of them suppress the event is the harness's contract to state, not ours
+ * to infer, and a hint that overstates is worse than one that hedges.
+ */
+const ASKING_MODES = new Set(['manual', 'plan'])
+
+export function permissionModeHint(root: string, mode: string | undefined): string {
+  if (mode === undefined || ASKING_MODES.has(mode)) return ''
+  if (!existsSync(join(dkmPath(root), 'policy.toml'))) return ''
+  return `⟨dkm⟩ this session runs in ${mode}, which answers its own permission prompts, so your .dkm/policy.toml may never be consulted. Run with --permission-mode manual to let DKM decide.\n`
+}
+
 export function unboundHint(root: string): string {
   if (!existsSync(join(dkmPath(root), 'policy.toml'))) return ''
   const binding = readBindings(root).bindings.find((b) => b.worktreePath === root)

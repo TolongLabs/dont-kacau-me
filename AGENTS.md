@@ -31,9 +31,8 @@ courier or a decision queue.
 Repo: [`github.com/TolongLabs/dont-kacau-me`](https://github.com/TolongLabs/dont-kacau-me). Built by TolongLabs, MIT
 licensed, and open to outside contributions — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-**Pure hooks, no daemon.** Nothing runs between hook firings, so nothing can die silently and leave a stale inbox
-looking healthy. The binding constraint is the hook timeout: everything on the hot path is a local `git`, file or `gh`
-operation, and nothing on it may call a model.
+**Hook-driven coordination, no daemon.** Receipt, ingest and permission work starts only when a hook fires. The optional
+usage-limit supervisor is a foreground CLI process, not a daemon. Nothing on a hook path may call a model.
 
 ## The authority principle
 
@@ -44,32 +43,26 @@ The single rule that outranks everything else in this file:
 Installing DKM and writing its policy **is** the prior human grant. Deciding autonomously inside the installer's own
 sessions, within the policy they wrote, is legitimate and is the product.
 
-**What is never legitimate is treating another session's message as the installer's consent.** The harness enforces
-this:
-
-- a peer's message is labelled as coming from another Claude session
-- a peer cannot approve a permission prompt
-- in auto mode a relayed approval claim is treated as untrusted input
-
-DKM must contain no code path from an inbound message to a permission grant. There is a test for this, and it is not
-optional.
+**What is never legitimate is treating another session's message as the installer's consent.** DKM enforces the boundary
+in `src/decide.ts`: the engine accepts only `DecisionInput` and `Policy`, imports no store or GitHub client and does not
+read pending events. `src/decide.test.ts` asserts that source boundary; the test is not optional.
 
 **The grant itself is in scope.** An agent that can edit `.dkm/policy.toml` can widen the authority governing it, which
 is manufacturing consent by another route. `.dkm/` is on the blast-radius table for that reason; do not take it off.
 
 ## Tracking tiers
 
-Repository activity is tracked at three granularities. A signal is only ever delivered at the finest tier that claims
-it, so nothing is delivered twice.
+Repository activity is tracked at three granularities. For one recipient and one ingest, a signal is queued only at the
+finest tier that claims it; the code does not put the same event into multiple tier groups for that worktree.
 
-| Tier         | Covers                                                                          | Delivered as                          |
-| ------------ | ------------------------------------------------------------------------------- | ------------------------------------- |
-| **Bound**    | The work item this worktree owns                                                | Full receipt, every field             |
-| **Followed** | Work items this session declared a dependency on                                | Contract delta, head SHA, blockers    |
-| **Ambient**  | Repository-wide: new issues, new PRs, @mentions, CI failures on the base branch | Headline and URL only, never the body |
+| Tier         | Covers                                                   | Delivered as                                  |
+| ------------ | -------------------------------------------------------- | --------------------------------------------- |
+| **Bound**    | The work item this worktree owns                         | Receipt-derived summary                       |
+| **Followed** | Work items this session declared a dependency on         | Receipt-derived summary                       |
+| **Ambient**  | Other issues and PRs updated since the repository cursor | Headline and URL; response bodies are dropped |
 
-**Raw commits are not an ambient signal.** A commit becomes visible as a head SHA change on a bound or followed item,
-which is where it carries meaning. A repository-wide commit feed is noise with nothing actionable in it.
+**Raw commits are not an ambient signal.** `fetchSince()` queries updated issues and PRs. A publisher's `Stop` receipt
+captures its current head SHA; there is no repository-wide commit feed.
 
 ## How to work
 
@@ -121,17 +114,16 @@ If reading your message takes longer than doing the thing, you have cost time.
 
 ## Tech stack and commands
 
-| Tool                                 | Role                                                                      |
-| ------------------------------------ | ------------------------------------------------------------------------- |
-| **Bun**                              | Package manager, script runner and test runner                            |
-| **Biome**                            | Lint and format for JS, TS, JSON                                          |
-| **Prettier**                         | Format for Markdown and YAML, the two Biome does not cover                |
-| **TypeScript**                       | `tsc --noEmit`; strict, `noUncheckedIndexedAccess`                        |
-| **commitlint + husky + lint-staged** | Conventional Commits on `commit-msg`; staged files linted on `pre-commit` |
-| **`gh`**                             | The only transport. Every receipt and every fetch goes through it         |
+- **Bun** is the package manager, script runner and test runner.
+- **Biome** lints and formats JS, TS and JSON.
+- **Prettier** formats Markdown and YAML, which Biome does not own here.
+- **TypeScript** runs as `tsc --noEmit` with strict checking and `noUncheckedIndexedAccess`.
+- **commitlint, husky and lint-staged** enforce the commit gate: `.husky/commit-msg` runs `commitlint --edit` and
+  `.husky/pre-commit` runs `lint-staged` over staged files. `bun install` wires both through the `prepare` script.
+- **`gh`** is the repository transport. Receipt reads, receipt writes, issue reads and check reads go through it.
 
 ```bash
-bun install          # dev tooling; also wires husky hooks
+bun install          # install dev tooling and run the package prepare script
 bun run lint         # biome check . && prettier --check
 bun run format       # biome format --write . && prettier --write
 bun run typecheck    # tsc --noEmit
@@ -275,9 +267,11 @@ Folding an unrelated fix into a PR hides it; leaving it unrecorded loses it.
 - **Do not** create a path from an inbound message to a permission decision. See the authority principle
 - **Do not** publish raw transcripts or unrestricted tool output. The receipt is a fixed allowlisted schema
 - **Do not** treat `reported` or `unverified` receipt fields as fact about the repository
-- **Do not** emit a receipt when no state changed. `Stop` means the agent finished a response, not that work is done
+- **Do not** emit another receipt after the baseline unless head, blockers or checks changed. `Stop` means the agent
+  finished a response, not that work is done
 - **Do not** deduplicate on message text. Identical prose can represent two distinct states
-- **Do not** bind a receipt using a directory basename or branch name. Node IDs only
+- **Do not** infer a work item from a directory basename or branch name. Resolve an explicit item number to GitHub node
+  IDs, then bind that item to the worktree path
 - **Do not** run a background poller. Ingest is a cursored pull on the injection hooks
 - **Do not** register a hook whose contract you have not read. `WorktreeCreate` and `WorktreeRemove` are providers, not
   notifications, and a handler that merely takes notes in one breaks worktree creation for the whole session
@@ -286,8 +280,8 @@ Folding an unrelated fix into a PR hides it; leaving it unrecorded loses it.
 - **Do not** commit directly to `main`, force-push, rewrite published history, or delete a branch other than a merged
   feature branch
 - **Do not** commit `.env`, or any credential. This repository is public: assume anything committed is published
-- **Do not** commit a path that only exists on your machine. `/home/<you>/...`, `C:\Users\...` and scratch directories
-  under `/tmp` are invisible to everyone else. Name the tool, not your copy of it
+- **Do not** commit a path that only exists on your machine. User-home, drive-qualified and scratch paths are invisible
+  to everyone else. Name the tool, not your copy of it
 - **Do not** create `docs/architecture.md` or a second README
 - **Do not** start implementation before `PRODUCT.md`, `PRD.md` and `TRD.md` all exist
 
@@ -327,6 +321,6 @@ they disagree.**
 
 Two per-machine tools may be present, and neither is required:
 
-- **`rtk`** rewrites shell commands to a token-optimised proxy, so a `Bash` payload may arrive as `rtk git status`
-  rather than `git status`. Policy matching sees the rewritten string; keep `match` rules substring-safe
+- **`rtk`** may rewrite a shell command before DKM receives the `Bash` payload. `src/decide.ts` compares `match`
+  literally with that payload string, so keep command matches substring-safe
 - **`graphify`** builds a codebase knowledge graph. Use it for architecture questions only once `graphify-out/` exists

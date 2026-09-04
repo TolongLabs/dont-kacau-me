@@ -74,8 +74,9 @@ committed policy clears the routine prompts, and the migration still waits for a
 - **Provenance before propagation.** Head SHAs, changed paths and checks travel with the facts they support.
 - **Policy-backed autonomy.** Routine prompts can resolve as `allow`; mechanical blast-radius rules preserve `ask` and
   `deny`.
-- **Auditable decisions.** Every autonomous answer is logged before it is returned and summarised in the next receipt.
-- **Survives a usage limit.** A supervised run waits for the reset the server named and resumes the same session.
+- **Auditable decisions.** Every policy evaluation is logged before DKM emits its result; the next emitted receipt
+  counts decisions since the previous one.
+- **Survives a usage limit.** A supervised run computes a wait from the reported reset and resumes the same session.
 - **Pure hooks.** There is no daemon, background poller or model call on the hot path.
 - **Small command surface.** Bind work, follow dependencies, report blockers and inspect status without reading raw
   transcripts.
@@ -97,8 +98,8 @@ claim true fall away as the developer retypes it.
 
 ### 3. The repository moves and `Stop` writes a receipt
 
-When the head SHA, blocker set or check state changes, the `Stop` hook measures the repository and upserts one GitHub
-comment for the work item. A no-op stop produces no network write and no output.
+The first bound `Stop` writes a baseline receipt. Later stops update it only when the head SHA, blocker set or check
+state changes. An unchanged stop produces no network write and no output.
 
 ### 4. The teammate reads the work item
 
@@ -117,9 +118,9 @@ prompts vanish while the dangerous ones do not.
 
 ## Architecture
 
-DKM is a Claude Code hook bundle with no daemon. Every moving part starts on a hook firing, performs a local `git`, file
-or `gh` operation, writes any state under `.dkm/`, and exits. Nothing runs between firings, and the hot path never calls
-a model.
+DKM coordinates sessions through Claude Code hooks and has no daemon. Receipt, ingest and permission work begins on a
+hook firing and never calls a model. The optional usage-limit supervisor is a foreground CLI process rather than part of
+the hook path.
 
 ![DKM architecture: two worktrees feed a bundle of short-lived hooks, which read and write one shared .dkm store, publish receipts to a GitHub work item and reach the human only for what policy did not answer](assets/architecture.svg)
 
@@ -128,49 +129,45 @@ This section stays at the system-narrative level. Hook contracts, data models, s
 
 ### The hook lifecycle
 
-| Hook event          | DKM action                                                                        | Observable result                                           |
-| ------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `Stop`              | Emit: compare the current state with the last emit                                | Upsert a receipt only when head, blockers or checks changed |
-| `SessionStart`      | Ingest: fetch from the repository cursor and drain pending items                  | Inject current context when a session starts                |
-| `UserPromptSubmit`  | Ingest the same way, throttled to once every 120 seconds                          | Inject context into an already-running session              |
-| `PermissionRequest` | Decide: evaluate policy, append the log, answer `allow` or `deny`, or stay silent | Resolve prior grants without inventing a new one            |
+| Hook event          | DKM action                                                   | Observable result                                  |
+| ------------------- | ------------------------------------------------------------ | -------------------------------------------------- |
+| `Stop`              | Publish a baseline, then compare later tracked state         | Update one receipt only after a tracked delta      |
+| `SessionStart`      | Pull repository updates and drain this worktree's queue      | Inject available context when a session starts     |
+| `UserPromptSubmit`  | Run the same pull with a rate limit, then drain              | Inject available context on a later prompt         |
+| `PermissionRequest` | Evaluate policy, append a record and emit or defer           | Execute a prior grant or leave the prompt to human |
+| `SessionEnd`        | Record the session ID, working directory and supplied reason | Leave a diagnostic resume ticket on disk           |
 
 `Stop` means the agent finished a response, not that its work is done. The emit hook therefore produces no receipt when
 no tracked state changed.
 
-There is no worktree hook. Claude Code's `WorktreeCreate` and `WorktreeRemove` are **providers** — one is expected to
-create the worktree and echo its path, the other to remove it — so a plugin that registered them merely to take notes
-would break `claude --worktree` outright. Binding is an explicit command instead.
+DKM does not register a worktree lifecycle hook. Binding is an explicit command, so the user chooses the GitHub item a
+worktree owns.
 
-`PermissionRequest` has no wire form for `ask`. Answering is `allow` or `deny`; saying nothing is what hands the prompt
-back to the human, and it is also what DKM emits when its own handler fails.
+When policy does not grant or deny a request, DKM leaves the prompt to the human. A handler failure takes the same human
+path.
 
-The injection hooks fetch items since a persisted repository cursor, store them in `.dkm/pending/`, and write them to
-stdout so Claude Code adds them to model context. Delivery happens when a session starts or receives a prompt, not the
-instant a receipt is published.
-
-`UserPromptSubmit` fires on every turn. Its 120-second throttle prevents every prompt from placing a network call on the
-hot path.
+Delivery is pull-based. A session receives queued context when it starts or submits a prompt, not when another session
+publishes a receipt.
 
 ### Receipt delivery and tracking
 
 A signal is delivered only at the finest tier that claims it, so nothing arrives twice.
 
-| Tier         | Covers                                                                          | Delivered as                          |
-| ------------ | ------------------------------------------------------------------------------- | ------------------------------------- |
-| **Bound**    | The work item this worktree owns                                                | Full receipt, every field             |
-| **Followed** | Work items this session declared a dependency on                                | Contract delta, head SHA, blockers    |
-| **Ambient**  | Repository-wide: new issues, new PRs, @mentions, CI failures on the base branch | Headline and URL only, never the body |
+| Tier         | Covers                                                   | Delivered as                                               |
+| ------------ | -------------------------------------------------------- | ---------------------------------------------------------- |
+| **Bound**    | The work item this worktree owns                         | Receipt summary: SHAs, contract paths, checks and blockers |
+| **Followed** | Work items this session declared a dependency on         | The same receipt summary, labelled `followed`              |
+| **Ambient**  | Other issues and PRs updated since the repository cursor | Headline and URL                                           |
 
-Raw commits are not an ambient signal. A commit becomes visible as a head SHA change on a bound or followed item, where
-it carries meaning; a repository-wide commit feed is unactionable noise.
+The current GitHub query returns updated issues and PRs. DKM discards body fields before it builds a pending event; it
+does not implement separate @mention or base-branch CI feeds. Raw commits are not an ambient signal.
 
 ### The receipt schema
 
 ![Receipt flow: session A finishes a turn, the Stop hook measures the repository and writes a receipt only when something changed, and session B pulls that delta into its context on its next start or prompt](assets/receipt-flow.svg)
 
-One GitHub comment per work item is edited in place, never appended to. Every field has one of three kinds, keeping
-measured fact structurally separate from agent narrative.
+One GitHub comment per work item is edited in place, never appended to. Receipt content has three trust levels, keeping
+repository evidence structurally separate from agent narrative.
 
 | Kind           | Source                                  | How to treat                                          |
 | -------------- | --------------------------------------- | ----------------------------------------------------- |
@@ -178,23 +175,22 @@ measured fact structurally separate from agent narrative.
 | **reported**   | Asserted by the session about its state | May be displayed and routed, never as repository fact |
 | **unverified** | Agent prose                             | May only ever be displayed                            |
 
-The measured fields are `work_item`, `base`, `head`, `changed_paths`, `checks`, `contract_delta`, `decisions`,
-`event_id` and `observed_at`. `blockers` is reported, and `narrative` is unverified.
+The receipt carries GitHub item identity, a git range, changed paths, check results, contract paths, decision counts,
+reported blockers, narrative and an observation time. DKM does not read raw transcripts or tool output into a receipt;
+only a note explicitly recorded through the CLI becomes narrative.
 
-A receipt whose `head` no longer matches the work item's head is stale by definition. A consumer must re-fetch instead
-of acting on it. Raw transcripts and unrestricted tool output are never published; the receipt is a fixed allowlisted
-schema.
+Every receipt carries the head SHA at measurement time, but DKM does not compare it with the current remote head before
+injection. The injected warning tells the session to re-read before acting if the head has moved.
 
 ### Policy and authority
 
 > Auto-answering may **execute an existing decision**. It must never **manufacture intent or consent**.
 
 Installing DKM and writing `.dkm/policy.toml` is the prior human grant. DKM may decide within that committed policy in
-the installer's own sessions. A peer session's message is never consent: Claude Code labels its origin, a peer cannot
-approve a permission prompt, and an auto-mode relay claiming approval is untrusted input.
+the installer's own sessions. `src/decide.ts` receives only the current permission input and parsed policy; it does not
+import the pending-event store or GitHub client.
 
-There is no code path from an inbound message to a permission grant, and the test suite enforces that boundary.
-`PermissionRequest` evaluates rules first-match-wins in this order:
+`PermissionRequest` evaluates rules in this order:
 
 1. Mechanical blast-radius rules.
 1. Explicit policy allow rules for paths, tools and commands the installer granted in advance.
@@ -204,35 +200,37 @@ The blast-radius table is deliberately mechanical, not a model's assessment of i
 self-assessing risk. `.dkm/` is on it because the policy is the grant: an agent that can edit the file granting its
 authority can widen that authority without anyone deciding to.
 
-| Trip                                                               | Result  |
-| ------------------------------------------------------------------ | ------- |
-| Deletes data, drops a column, or writes a migration                | `ask`   |
-| Egress: posts, publishes, deploys, sends, or opens a network write | `ask`   |
-| Spends money                                                       | `ask`   |
-| Touches a lockfile, an exported API surface, or `.env`             | `ask`   |
-| Touches anything under `.dkm/`, the grant itself                   | `ask`   |
-| Writes outside the session's own worktree                          | `deny`  |
-| Matches an explicit policy allow rule and trips nothing above      | `allow` |
+| Recognised input                                                            | Result  |
+| --------------------------------------------------------------------------- | ------- |
+| A path outside the session worktree                                         | `deny`  |
+| Recursive forced removal, destructive SQL, or a `migrations`/`drizzle` path | `ask`   |
+| Recognised network, push, deployment, publication or release commands       | `ask`   |
+| A package manifest, supported lockfile, `.env` file or path under `.dkm/`   | `ask`   |
+| The first matching policy allow rule, after no blast-radius match           | `allow` |
+| Anything else                                                               | `ask`   |
 
-Every autonomous decision appends to `.dkm/decisions.jsonl` before DKM returns it, not after. The record names the rule,
-the inputs and how to reverse it. Its count and summary surface in the receipt, turning an audit into a handful of lines
-instead of a replay of the whole turn.
+Every valid permission evaluation appends to `.dkm/decisions.jsonl` before DKM emits its result. The status command
+shows the total record count and the five most recent records; a later receipt counts decisions since the previous emit.
 
 ### Surviving a usage limit
 
 A long overnight run used to end the moment the account's usage limit was reached, and everything after that point
 simply did not happen. Start it under the supervisor instead:
 
+From the plugin clone, run:
+
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts revive "work through issue 12" -- --effort high
+bun src/cli.ts revive "work through issue 12" -- --effort high
 ```
 
-It **waits; it never evades.** When a run stops on a limit, the supervisor reads the reset time the server itself
-reported, sleeps until then, and resumes **the same session by id** so the work continues where it was interrupted
-rather than starting over. A genuine error stops it instead of being retried forever, and a limit that reports no
-session id stops it too, because restarting from the prompt would repeat work already done.
+When a run stops on a limit, the supervisor reads the reported reset time. A reset up to six hours away gets a 30-second
+cushion; a later reset is rechecked after six hours, and a missing or past time uses capped exponential backoff. It then
+resumes **the same session by ID** rather than restarting the original prompt.
 
-Every pause is appended to `.dkm/revivals.jsonl`, so a night can be reconstructed in the morning.
+A genuine error stops instead of being retried forever. A limit that reports no session ID also stops because replaying
+the prompt could repeat work already done. No code path changes credentials or account.
+
+Every wait is appended to `.dkm/revivals.jsonl`; completion and failure are recorded there too.
 
 This is the one part of DKM that is not a hook. It is a foreground process you start instead of starting `claude`, it is
 opt-in, and nothing runs in the background when you are not running it.
@@ -247,7 +245,7 @@ opt-in, and nothing runs in the background when you are not running it.
 | Repository evidence         | Local `git` and GitHub CLI (`gh`)    | Measures worktree state and maintains issue receipts                     |
 | Lint and format             | Biome and Prettier                   | Checks JS, TS and JSON; formats Markdown and YAML                        |
 | Type checking               | `tsc --noEmit`                       | Verifies the TypeScript contract without producing artifacts             |
-| Change gates                | commitlint, husky and lint-staged    | Enforces conventional commits and checks staged files                    |
+| Change tooling              | commitlint, husky and lint-staged    | Installed, but no project commit-hook scripts currently invoke it        |
 | Local state                 | `.dkm/` files and JSONL              | Stores policy, bindings, cursors, pending items and decisions            |
 
 ## Getting started
@@ -266,7 +264,8 @@ opt-in, and nothing runs in the background when you are not running it.
    git clone https://github.com/TolongLabs/dont-kacau-me.git
    ```
 
-1. Install the development tooling. This also wires the husky git hooks:
+1. Install the development tooling. The package prepare script also runs Husky, although this repository currently has
+   no project `pre-commit` or `commit-msg` hook script:
 
    ```bash
    bun install
@@ -282,7 +281,7 @@ opt-in, and nothing runs in the background when you are not running it.
    To try it for one session without installing anything, load the directory instead:
 
    ```bash
-   claude --plugin-dir /absolute/path/to/dont-kacau-me
+   claude --plugin-dir "$(pwd)"
    ```
 
    Claude Code reads the manifest from `.claude-plugin/plugin.json`, hook declarations from `hooks/hooks.json`, and
@@ -308,13 +307,13 @@ There is no daemon to start and nothing persistent that can die quietly between 
 `.dkm/policy.toml` is the only committed file under `.dkm/`; all other DKM state is git-ignored. Blast-radius rules run
 before the file and cannot be overridden from it. Anything unmatched defaults to `ask`.
 
-| Key or section    | Value shape                  | Controls                                  | Safety behavior                                |
-| ----------------- | ---------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `version`         | Integer; currently `1`       | Policy schema version                     | Does not grant an action                       |
-| `contractGlobs`   | Array of path globs          | Which changed paths form a contract delta | Affects receipt routing, not permission grants |
-| `[[allow]].tool`  | Tool name                    | Tool eligible for a prior allow grant     | Still loses to a blast-radius trip             |
-| `[[allow]].match` | Optional command string      | Narrows a command-based tool grant        | First matching rule wins                       |
-| `[[allow]].paths` | Optional array of path globs | Narrows a write or edit grant             | Cannot authorize outside the session worktree  |
+| Key or section    | Value shape                  | Controls                                         | Safety behavior                                   |
+| ----------------- | ---------------------------- | ------------------------------------------------ | ------------------------------------------------- |
+| `version`         | Integer by convention        | Present in the committed file; parser ignores it | Loaded policy remains version 1                   |
+| `contractGlobs`   | Array of path globs          | Which changed paths form `contractDelta`         | Changes receipt content, not permission decisions |
+| `[[allow]].tool`  | Tool name                    | Tool eligible for a prior allow grant            | Still loses to a blast-radius trip                |
+| `[[allow]].match` | Optional substring           | Narrows the first command, path or URL input     | First matching allow rule wins                    |
+| `[[allow]].paths` | Optional array of path globs | Requires at least one candidate path to match    | An outside-worktree candidate still denies        |
 
 ## Using DKM: five moments
 
@@ -363,8 +362,8 @@ You slept; the agents did not. Instead of reading three transcripts to reconstru
 /dont-kacau-me:dkm-status
 ```
 
-Every autonomous decision appears with the rule that produced it. The audit is a handful of lines instead of a replay of
-the work. A decision without a log entry is a bug, and the test suite fails on it.
+The output gives the total decision count and the five most recent records, including each record's rule and input
+summary. The full append-only history remains in `.dkm/decisions.jsonl`.
 
 ### The thing the agent could not decide
 
@@ -383,7 +382,7 @@ teammates can see it without anyone being interrupted.
 ```text
 .claude-plugin/plugin.json       # plugin manifest
 .claude-plugin/marketplace.json  # so the plugin can be installed, not only --plugin-dir'd
-.dkm/policy.toml            # the committed policy; all other .dkm/ state is git-ignored
+.dkm/policy.toml                 # the committed policy; all other .dkm/ state is git-ignored
 AGENTS.md                   # canonical project instructions
 CHANGELOG.md                # what changed, and what is known to be broken
 CLAUDE.md                   # points at AGENTS.md
@@ -440,6 +439,12 @@ test/
   inference or accumulated precedent.
 - **No delivery receipt.** A queued event is removed when a session drains it. Nothing records whether the model
   actually acted on it, so an injected delta that the agent ignored looks identical to one it used.
+- **No automatic stale-head check.** A receipt carries the head observed by its publisher, but ingest does not compare
+  that SHA with the work item's current remote head before rendering it.
+- **No enforced hop budget.** Pending events carry `rootId` and `hops`, but the current code only writes and validates
+  those fields. It never increments or rejects on them.
+- **Narrow ambient feed.** Ambient ingest sees issues and PRs returned by the updated-items query. It has no separate
+  @mention or base-branch CI source.
 
 ## Contributing
 

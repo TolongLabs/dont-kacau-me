@@ -9,7 +9,7 @@ outranks this file wherever the two disagree. What follows is the short version.
 ## Getting set up
 
 ```bash
-bun install          # dev tooling; also wires the husky git hooks
+bun install          # install dev tooling and run the package prepare script
 bun run lint         # biome check . && prettier --check
 bun run typecheck    # tsc --noEmit
 bun test             # unit and end-to-end tests
@@ -36,8 +36,20 @@ Say in your PR which mutations you ran and that they were caught.
 
 1. Branch as `<type>/<short-slug>`
 1. Commit as [Conventional Commits](https://www.conventionalcommits.org/): `<type>[scope]: <description>`, one
-   imperative sentence, lowercase, no trailing period. Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`,
-   `style`, `perf`. `commitlint` enforces this on commit
+   imperative sentence, lowercase, no trailing period. The accepted types are:
+
+   - `feat`
+   - `fix`
+   - `refactor`
+   - `docs`
+   - `test`
+   - `chore`
+   - `style`
+   - `perf`
+
+   `commitlint.config.js` declares that type set. The repository currently has no project `commit-msg` hook script, so
+   run commitlint explicitly if you want local validation before opening the PR.
+
 1. Keep changes surgical. Every changed line should trace to what was asked. Remove the imports and functions your own
    change orphaned; leave pre-existing dead code alone and mention it
 1. **If you change a hook contract or any behaviour, move the docs with it.** A PR that changes a contract without

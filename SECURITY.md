@@ -12,19 +12,20 @@ Expect an acknowledgement within three working days and an assessment within sev
 DKM answers permission prompts on its installer's behalf and publishes to GitHub, so the interesting failures are about
 authority and disclosure rather than memory safety:
 
-- **Consent laundering.** Any path by which content DKM ingests — a receipt, an issue body, a peer session's message —
-  influences a permission decision. There must be none
-- **Escaping the policy.** A tool call that a blast-radius rule should have stopped and did not: writing outside the
-  session's worktree, reaching `.dkm/`, touching a lockfile or `.env`, a migration, egress, or spending
-- **Disclosure through a receipt.** Anything reaching a published comment that is not in the allowlisted schema. Raw
-  transcripts and unrestricted tool output must never be published
+- **Consent laundering.** Any path from pending-event, receipt, headline or session-report content into `decide()`. The
+  current engine accepts only `DecisionInput` and `Policy`
+- **Escaping the policy.** A call matching a predicate in `src/decide.ts` that does not receive its documented `ask` or
+  `deny` result
+- **Disclosure through a receipt.** Any automatically sourced content outside the fields constructed in
+  `src/hooks/stop.ts`. Narrative and blockers are publishable only after explicit CLI report commands; hooks do not read
+  transcripts or unrestricted tool output into them
 - **A decision that is not logged.** Every autonomous answer must be in `.dkm/decisions.jsonl` before it is returned
 
 ## What is out of scope
 
 - The behaviour of Claude Code itself. Report those to Anthropic
 - A policy that grants more than its author intended. `.dkm/policy.toml` is the human's grant, and DKM executes it as
-  written. Blast-radius rules still run first and cannot be overridden from it
+  parsed. The blast-radius predicates in `src/decide.ts` still run first and cannot be overridden from it
 - Anything requiring an attacker who can already write to your checkout. At that point they can edit the policy, and
   DKM's guarantees do not survive an untrusted local filesystem
 

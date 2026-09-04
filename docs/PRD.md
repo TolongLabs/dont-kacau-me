@@ -14,8 +14,8 @@ Contents:
 
 - **US-1.** As a developer with several worktrees, I bind each session to a work item once, and never hand-summarise its
   progress again.
-- **US-2.** As a developer whose agent depends on someone else's work, I receive their contract changes in my agent's
-  context, bound to the commit they were observed at, without asking anyone.
+- **US-2.** As a developer whose agent depends on someone else's work, I receive contract changes and their observed
+  commit when receipt enrichment completes within the ingest budget.
 - **US-3.** As a developer, my agents stop asking me questions my own policy already answers, and I can read every call
   they made in one place afterwards.
 - **US-4.** As a teammate, I see one comment per work item that tells me what actually changed, with the agent's
@@ -31,7 +31,7 @@ Contents:
 | **FR-INGEST**  | On `SessionStart` and `UserPromptSubmit`, fetch updated issues and PRs, queue per recipient, then drain that worktree | A valid queued file is deleted on drain; an undrained update for the same item overwrites it |
 | **FR-DECIDE**  | On `PermissionRequest`, evaluate the policy and emit `allow`, `deny` or `{}` for the human path                       | Blast-radius checks precede ordered allow rules, and unmatched input produces `{}`           |
 | **FR-LOG**     | Before emitting, append the tool, input summary, decision and rule, plus the current `reverse` placeholder            | Successful evaluation writes one `DecisionRecord` before `emit()`                            |
-| **FR-AMBIENT** | Treat updated issues and PRs not claimed as bound or followed as ambient                                              | Keep only item identity, kind, title, URL and update time in `PendingEvent`                  |
+| **FR-AMBIENT** | Treat updated issues and PRs not claimed as bound or followed as ambient                                              | Narrow GitHub results to `AmbientEvent` before constructing `PendingEvent`                   |
 | **FR-REVIVE**  | Treat a recognised usage limit as a pause, then resume the reported session after the computed wait                   | Never replay the original prompt after a session ID exists; stop on a genuine error          |
 
 **Ambient excludes raw commits deliberately.** A publisher's receipt captures its current head SHA. Ingest has no

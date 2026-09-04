@@ -78,8 +78,16 @@ contracts at once.
 
 ## [0.1.0] — 2026-09-03
 
-Initial implementation: the receipt, the decision engine, the hook bundle, the CLI, plugin packaging and CI. Verified
-against a fake `gh` in a test harness only.
+Initial implementation included:
+
+- the receipt
+- the decision engine
+- the hook bundle
+- the CLI
+- plugin packaging
+- CI
+
+It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.2.0...v0.3.0

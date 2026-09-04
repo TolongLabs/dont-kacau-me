@@ -2,9 +2,8 @@
 
 **How DKM is built.** Canonical over [`AGENTS.md`](../AGENTS.md) on technical detail. Implements [`PRD.md`](PRD.md).
 
-This reference describes the behavior present in `src/`, the plugin manifests and the test suite. The
-[`README.md`](README.md) keeps the user-facing narrative; this file names exact payloads, paths, commands and known
-boundaries.
+This reference describes the behavior present in the implementation, plugin manifests and test suite. The
+[`README.md`](README.md) keeps the user-facing narrative; this file names implementation contracts and known boundaries.
 
 Contents:
 
@@ -36,22 +35,25 @@ Contents:
 
 ## Architecture
 
-DKM is distributed as a Claude Code plugin. `.claude-plugin/plugin.json` identifies the plugin,
-`.claude-plugin/marketplace.json` makes the clone a marketplace source, `hooks/hooks.json` registers handlers and
-`commands/*.md` supplies slash-command frontmatter.
+DKM is distributed as a Claude Code plugin through these files:
+
+- `.claude-plugin/plugin.json` identifies the plugin.
+- `.claude-plugin/marketplace.json` makes the clone a marketplace source.
+- `hooks/hooks.json` registers handlers.
+- `commands/*.md` supplies slash-command frontmatter.
 
 The registered commands in `hooks/hooks.json` are:
 
-| Event               | Entrypoint                        | Timeout | Matcher  |
-| ------------------- | --------------------------------- | ------- | -------- |
-| `PermissionRequest` | `src/hooks/permission-request.ts` | 5s      | None     |
-| `Stop`              | `src/hooks/stop.ts`               | 20s     | None     |
-| `SessionStart`      | `src/hooks/session-start.ts`      | 15s     | `startup | resume | clear` |
-| `UserPromptSubmit`  | `src/hooks/user-prompt-submit.ts` | 15s     | None     |
-| `SessionEnd`        | `src/hooks/session-end.ts`        | 10s     | None     |
+| Event               | Entrypoint                        | Timeout | Matcher                  |
+| ------------------- | --------------------------------- | ------- | ------------------------ |
+| `PermissionRequest` | `src/hooks/permission-request.ts` | 5s      | None                     |
+| `Stop`              | `src/hooks/stop.ts`               | 20s     | None                     |
+| `SessionStart`      | `src/hooks/session-start.ts`      | 15s     | `startup\|resume\|clear` |
+| `UserPromptSubmit`  | `src/hooks/user-prompt-submit.ts` | 15s     | None                     |
+| `SessionEnd`        | `src/hooks/session-end.ts`        | 10s     | None                     |
 
 Each command invokes Bun through `${CLAUDE_PLUGIN_ROOT}`. No registered hook imports or calls a model. Repository work
-uses synchronous local file operations, `git` child processes and `gh` child processes.
+uses synchronous local I/O and child processes.
 
 The hot path is not limited to one `gh` call. A receipt emission calls `fetchChecks()`, then `upsertReceiptComment()`,
 which lists comments before it PATCHes or POSTs. Ingest calls `fetchSince()` for each tracked repository ID and may call
@@ -90,9 +92,14 @@ Here, **shared store** means `join(dkmPath(root), ...)`, normally under the main
 code-level exception: `src/hooks/report.ts reportPath()` uses `join(root, '.dkm', ...)`, so a linked worktree keeps its
 own session report beside that checkout.
 
-Only `BindingsFile`, `CursorFile` and `LastEmitFile` carry a top-level `version: 1`. `PendingEvent`, `Receipt` and
-`DecisionRecord` have runtime guards but no version field. `SessionReport` and `ResumeTicket` are read with their own
-field checks.
+The top-level versioned shapes are:
+
+- `BindingsFile`
+- `CursorFile`
+- `LastEmitFile`
+
+Each carries `version: 1`. `PendingEvent`, `Receipt` and `DecisionRecord` have runtime guards but no version field.
+`SessionReport` and `ResumeTicket` are read with their own field checks.
 
 `readJson()` returns an empty default after a missing file, parse failure or guard failure. Invalid JSONL lines are
 skipped. An invalid pending file is not returned and `drainPending()` leaves it on disk because deletion happens only
@@ -103,9 +110,23 @@ records use append-only JSONL. `clearReport()` removes the per-session report af
 
 ## Hook contracts
 
-`src/hooks/runtime.ts HookPayload` names `session_id`, `cwd`, `hook_event_name`, `permission_mode`, `stop_hook_active`,
-`tool_name`, `tool_input` and `reason`. At runtime, `readPayload()` validates only that the input is an object with
-string `session_id` and `cwd`; the other fields are consumed conditionally by individual handlers.
+`src/hooks/runtime.ts` declares this input shape:
+
+```ts
+type HookPayload = {
+  session_id: string
+  cwd: string
+  hook_event_name: string
+  permission_mode?: string
+  stop_hook_active?: boolean
+  tool_name?: string
+  tool_input?: unknown
+  reason?: string
+}
+```
+
+At runtime, `readPayload()` validates only that the input is an object with string `session_id` and `cwd`. Individual
+handlers consume the other fields conditionally.
 
 | Hook                | Required by its handler                    | Normal side effect                                             |
 | ------------------- | ------------------------------------------ | -------------------------------------------------------------- |
@@ -130,9 +151,16 @@ an error and exits 0. `Stop` and `PermissionRequest` use their own top-level cat
 { "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "deny", "message": "DKM blast:outside-worktree" } } }
 ```
 
-There is no emitted `behavior: "ask"`. The default, blast-radius `ask`, malformed input, missing repository and caught
-exception paths all emit `{}`. On a normal evaluation, `appendDecision()` runs before `emit()`; if logging itself
-throws, the catch path emits `{}` without a record.
+There is no emitted `behavior: "ask"`. These paths all emit `{}`:
+
+- the default decision
+- a blast-radius `ask`
+- malformed input
+- a missing repository
+- a caught exception
+
+On a normal evaluation, `appendDecision()` runs before `emit()`. If logging itself throws, the catch path emits `{}`
+without a record.
 
 The deny message is `DKM ${verdict.rule}`. An allow payload carries no message or updated input. The source never emits
 `hookSpecificOutput.additionalContext`.
@@ -150,8 +178,8 @@ does not return a path aborts creation. DKM therefore does not use either event 
 `src/hooks/session-start.ts` calls `ingest(root)` and then `drainAndRender(root)`. The prompt hook calls the same
 functions with `REFETCH_INTERVAL_MS = 120_000`.
 
-When the queue is non-empty, `render()` writes plain text grouped under `bound`, `followed` and `ambient`. A queued
-event with a receipt becomes a single line in this shape:
+When the queue is non-empty, `render()` writes plain text grouped by tracking tier. A queued event with a receipt
+becomes a single line in this shape:
 
 ```text
 #81 a1b2c3d → e5f6g7h · contract: src/types.ts · 2 check(s) failing · blockers: retry policy
@@ -207,7 +235,7 @@ serialized as per-field `kind` properties.
 | `narrative`     | `string`                                      | Session report                                 | Unverified |
 | `observedAt`    | ISO timestamp string                          | `new Date().toISOString()`                     | Generated  |
 
-`ChangedPath.status` accepts `A`, `M`, `D`, `R` and `C`. For a rename or copy, `changedPaths()` stores only the
+`ChangedPath.status` accepts the union `A | M | D | R | C`. For a rename or copy, `changedPaths()` stores only the
 destination path. Unknown status letters and malformed output rows are skipped.
 
 `fetchChecks()` runs:
@@ -216,12 +244,17 @@ destination path. Unknown status letters and malformed output rows are skipped.
 gh api repos/{owner}/{repo}/commits/<head>/check-runs
 ```
 
-It maps any non-completed check to `pending`. Completed conclusions are limited to `success`, `failure`, `neutral`,
-`cancelled`, `timed_out` and `skipped`; any other conclusion also becomes `pending`. A missing `run_attempt` becomes
-`1`, while a failed or malformed response becomes an empty checks array.
+It maps any non-completed check to `pending`. The completed conclusion union is
+`success | failure | neutral | cancelled | timed_out | skipped`; any other conclusion also becomes `pending`. A missing
+`run_attempt` becomes `1`, while a failed or malformed response becomes an empty checks array.
 
-`resolveBaseRef()` tries `origin/HEAD`, `origin/main` and `origin/master` in that order. If all three merge-base calls
-fail, receipt emission falls through the top-level catch and exits without publishing.
+`resolveBaseRef()` tries these refs in order:
+
+1. `origin/HEAD`
+1. `origin/main`
+1. `origin/master`
+
+If all three merge-base calls fail, receipt emission falls through the top-level catch and exits without publishing.
 
 ### Receipt rendering and parsing
 
@@ -246,8 +279,8 @@ backtick fence followed by `json`. It parses through a closing fence of the same
 
 ### Receipt emission
 
-`Stop` computes the head, merge base, changed paths, policy contract delta, GitHub checks and this session's report. It
-looks up prior state in `lastEmit.emitted[binding.bound.itemNodeId]`.
+`Stop` constructs the receipt fields listed in [Receipt contract](#receipt-contract), then looks up prior state in
+`lastEmit.emitted[binding.bound.itemNodeId]`.
 
 With no prior state, the first bound `Stop` publishes a baseline. Later, `unchanged()` suppresses publication when all
 three values match:
@@ -256,8 +289,16 @@ three values match:
 - sorted `blockers`
 - `checksFingerprint`, formed from sorted `checkRunId:attempt:conclusion` strings
 
-Changes to `base`, `changedPaths`, `contractDelta`, `decisions`, `narrative` or `observedAt` do not independently
-trigger an emit. `receiptFingerprint()` uses the same three semantic inputs, but `Stop` calls its own `unchanged()`
+These fields do not independently trigger an emit:
+
+- `base`
+- `changedPaths`
+- `contractDelta`
+- `decisions`
+- `narrative`
+- `observedAt`
+
+`receiptFingerprint()` uses the same three semantic inputs as the emit check, but `Stop` calls its own `unchanged()`
 helper rather than that exported function.
 
 `summariseDecisions()` starts at the previous state's global `decisionOffset`, then counts only records whose `session`
@@ -282,7 +323,7 @@ therefore be bound for one worktree, followed for another and ambient for a thir
 recipient queue.
 
 Bound and followed events are not rendered at different depths. When a receipt is available, both use `line()` to render
-the same base-to-head, contract, check and blocker summary. The tier heading is their only presentation difference.
+the same receipt summary. The tier heading is their only presentation difference.
 
 `fetchSince()` invokes:
 
@@ -292,8 +333,18 @@ gh api repos/{owner}/{repo}/issues?since=<encoded-ISO>&state=all&sort=updated&pe
 
 The endpoint returns issues and PRs updated since the cursor. `fetchSince()` does not implement @mention detection,
 base-branch CI events or a raw commit feed. It invokes the endpoint without a `--jq` projection, so response bodies may
-be present in `gh` stdout and the parsed response; only `node_id`, `number`, `title`, `html_url`, `updated_at` and PR
-kind survive into `AmbientEvent` and `PendingEvent`.
+be present in `gh` stdout and the parsed response. It narrows the result before ingest builds a `PendingEvent`:
+
+```ts
+type AmbientEvent = {
+  kind: 'issue' | 'pr'
+  nodeId: string
+  number: number
+  headline: string
+  url: string
+  updatedAt: string
+}
+```
 
 `trackedRepoIds()` derives repository node IDs from bound and followed items. The ID keys the cursor, but
 `fetchSince(root, since)` addresses the repository selected by the current checkout through `{owner}/{repo}`; it does
@@ -340,10 +391,12 @@ policy rather than a policy from its own branch. A missing or unreadable file re
 - the top-level `contractGlobs` key
 
 The committed file contains `version = 1`, but the parser does not read the key. It initializes every returned policy
-with `version: 1`. Unknown keys and tables are skipped.
+with `version: 1`. Unknown scalar keys are ignored. A single-bracket table clears the active allow rule; an unknown
+double-bracket table creates no rule but does not clear the active one.
 
-Each `[[allow]]` rule may set `tool`, `match` and `paths`. A new table begins as `{ tool: '' }`; the parser does not
-reject an incomplete rule. `contractGlobs` feeds `src/git.ts contractDelta()` and has no effect on permission matching.
+Each `[[allow]]` rule has the `PolicyAllowRule` shape from `src/types.ts`. A new table begins as `{ tool: '' }`; the
+parser does not reject an incomplete rule. `contractGlobs` feeds `src/git.ts contractDelta()` and has no effect on
+permission matching.
 
 ### Blast-radius evaluation
 
@@ -357,15 +410,37 @@ reject an incomplete rule. `contractGlobs` feeds `src/git.ts contractDelta()` an
 | `egress`           | `ask`    | `curl`, `wget`, `git push`, selected deploy commands, selected `gh` creates/comments or `gh api ... -X <write verb>` |
 | `surface`          | `ask`    | A supported lockfile, `package.json`, `.env`, `.env.*` or any resolved path containing a `.dkm` segment              |
 
-The data-loss SQL substrings are `drop table`, `drop column`, `truncate` and `delete from`, matched case-insensitively.
+The case-insensitive data-loss SQL substrings are:
+
+- `drop table`
+- `drop column`
+- `truncate`
+- `delete from`
+
 The `rm` matcher requires recursive and force flags before `--`, either separately or in one short option.
 
-The egress matcher recognizes `bun run deploy`, `npm run deploy`, any other command containing the word `deploy`,
-`gh pr create`, `gh issue create`, `gh pr comment`, `gh issue comment`, and `gh api` with `-X POST`, `PATCH`, `PUT` or
-`DELETE`. `vercel deploy` is excluded from this matcher because the earlier `money` trip catches it.
+The egress matcher recognizes:
 
-The surface filenames are `bun.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `package.json` and `.env`. The
-implementation does not inspect TypeScript exports or otherwise detect a general exported API surface.
+- `curl` or `wget`
+- `git push`
+- `bun run deploy` or `npm run deploy`
+- any other command containing the word `deploy`
+- `gh pr create` or `gh issue create`
+- `gh pr comment` or `gh issue comment`
+- `gh api` with `-X POST`, `PATCH`, `PUT` or `DELETE`
+
+`vercel deploy` is excluded from this matcher because the earlier `money` trip catches it.
+
+The surface filenames are:
+
+- `bun.lock`
+- `package-lock.json`
+- `yarn.lock`
+- `pnpm-lock.yaml`
+- `package.json`
+- `.env`
+
+The implementation does not inspect TypeScript exports or otherwise detect a general exported API surface.
 
 `collectPathCandidates()` recursively extracts every string from `tool_input`, then adds each whitespace-separated
 token. `outside-worktree`, data-loss path checks and surface checks all operate on that candidate set. This is
@@ -450,14 +525,21 @@ A result is a limit when numeric `api_error_status` equals `429`, or when one of
 - `result`
 - `error`
 
-The markers are `limit_reached`, `quota_exceeded`, `rate_limit`, `usage_limit` and `usage limit reached`, compared after
-lowercasing. Unparseable output is also searched for those markers. Without one, unparseable output is a failure.
+The case-insensitive limit markers are:
+
+- `limit_reached`
+- `quota_exceeded`
+- `rate_limit`
+- `usage_limit`
+- `usage limit reached`
+
+Unparseable output is also searched for those markers. Without one, unparseable output is a failure.
 
 A parsed object with `is_error: true` and no limit marker is a failure. Other parsed objects are treated as done, with
 `result` reduced to a string or an empty string.
 
-Only string-valued `resetsAt` and `resetAt` fields are read explicitly. Otherwise `resetSource()` extracts up to 60
-characters after a `reset`, `resets`, `reset at` or `reset in` phrase from the combined signal fields.
+Only string-valued `resetsAt` and `resetAt` fields are read explicitly. Otherwise `resetSource()` uses
+`/reset[s]?\s*(?:at|in)?[^.\n]{0,60}/i` against the combined signal fields.
 
 `parseResetAt()` accepts an all-digit epoch string of 9–13 digits, an ISO-like timestamp, or a bare local clock time.
 Epochs of at most 10 digits are seconds; longer epochs are milliseconds. A bare clock at or before the current local
@@ -476,8 +558,8 @@ foreground process.
 
 ### Resume loop
 
-`runSupervised()` appends a `waiting` record before every sleep and appends `done`, `failed` or `unresumable` on those
-terminal paths. If a limit result has no session ID, it records `unresumable` and stops rather than replaying the
+`runSupervised()` appends a `waiting` record before every sleep. It appends a terminal record for completion, failure or
+an unresumable limit. If a limit result has no session ID, it records `unresumable` and stops rather than replaying the
 prompt.
 
 The final allowed attempt does not sleep. If it also returns a limit, the function returns that limit after
@@ -497,8 +579,13 @@ The implementation uses these concrete keys:
 | Drain     | Valid pending filename                            | Delete before rendered stdout is written                            |
 | Decide    | No dedup key                                      | Every normal handler firing appends another record                  |
 
-`eventId` is assigned with `crypto.randomUUID()` for receipts and with the GitHub item node ID for fetched events. There
-is no session-incarnation key, comment `updated_at` key, tool-use ID deduplication or acknowledgement protocol.
+`eventId` is assigned with `crypto.randomUUID()` for receipts and with the GitHub item node ID for fetched events. The
+implementation has none of these mechanisms:
+
+- a session-incarnation key
+- a comment `updated_at` key
+- tool-use ID deduplication
+- a delivery acknowledgement protocol
 
 ## Known implementation limits
 
@@ -523,6 +610,8 @@ is no session-incarnation key, comment `updated_at` key, tool-use ID deduplicati
 - **Hook timing is not guaranteed by child timeouts.** A `Stop` can issue three sequential `gh` calls with 10-second
   child timeouts inside a 20-second hook timeout, and `src/git.ts` sets no timeout.
 - **Allow paths use any-match.** One matching in-worktree path can satisfy a rule containing several candidate paths.
+- **Unknown repeated policy tables retain state.** A non-`allow` double-bracket table does not clear `currentRule`, so
+  recognized keys after it can still modify the preceding allow rule.
 - **Resume ticket is unused.** `SessionEnd` writes `.dkm/last-session.json`, but the supervisor never reads it.
 - **Detached-head handling is unused.** `isDetachedHead()` exists and has unit coverage, but no hook or CLI caller uses
   it to alter behavior.
@@ -545,13 +634,19 @@ The repository's test sources currently cover:
 | `test/plugin.test.ts`      | Manifest inventory, handler paths, command roots, version alignment and licence                  |
 | `test/worktree.test.ts`    | Shared bindings and policy resolution across a linked worktree                                   |
 
-The source does **not** currently contain a consumer stale-head rejection test, a money-trip unit test, a 5,000-commit
-timing test, or a test proving every narrative-only update emits. The last behavior is intentionally false under the
-current emit predicate.
+The source does **not** currently contain:
+
+- a consumer stale-head rejection test
+- a money-trip unit test
+- a 5,000-commit timing test
+- a test proving every narrative-only update emits
+
+The last behavior is intentionally false under the current emit predicate.
 
 ## Recorded measurements
 
 The `0.3.0` entry in [`CHANGELOG.md`](../CHANGELOG.md) preserves the live measurements attached to issue #4: a cursored
-issue fetch of 30 items took 0.78–1.27s and one comment fetch took 0.42–1.01s against a 15s injection-hook timeout. The
-current source responds with an 8,000ms ingest budget and per-ingest receipt memoization; the repository does not
+issue fetch of 30 items took 0.78–1.27s and one comment fetch took 0.42–1.01s against a 15s injection-hook timeout.
+
+The current source responds with an 8,000ms ingest budget and per-ingest receipt memoization. The repository does not
 contain a benchmark that reproduces those timings.

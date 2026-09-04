@@ -31,8 +31,8 @@ courier or a decision queue.
 Repo: [`github.com/TolongLabs/dont-kacau-me`](https://github.com/TolongLabs/dont-kacau-me). Built by TolongLabs, MIT
 licensed, and open to outside contributions — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-**Hook-driven coordination, no daemon.** Receipt, ingest and permission work starts only when a hook fires. The optional
-usage-limit supervisor is a foreground CLI process, not a daemon. Nothing on a hook path may call a model.
+**Hook-driven coordination, no daemon.** Coordination work starts only when a hook fires. The optional usage-limit
+supervisor is a foreground CLI process, not a daemon. Nothing on a hook path may call a model.
 
 ## The authority principle
 
@@ -66,10 +66,16 @@ captures its current head SHA; there is no repository-wide commit feed.
 
 ## How to work
 
-**Proceed without asking** on anything you can name a sensible default for: picking a library, file layout, naming or
-approach; installing a dependency; refactoring your own code mid-task; writing tests or types you judge necessary;
-fixing a bug in code you are already touching. If two approaches are close, pick one and say which. **A reversible
-decision made now beats a correct decision made after a ten minute conversation.**
+**Proceed without asking** on anything you can name a sensible default for, including:
+
+- selecting an implementation approach
+- installing a dependency
+- refactoring your own code mid-task
+- writing tests or types you judge necessary
+- fixing a bug in code you are already touching
+
+If two approaches are close, pick one and say which. **A reversible decision made now beats a correct decision made
+after a ten minute conversation.**
 
 **Stop and ask only for these six.** If it is not on this list, proceed:
 
@@ -108,7 +114,7 @@ If reading your message takes longer than doing the thing, you have cost time.
   the request
 - **Three to five sentences** for a normal update. Longer only when something broke and the detail is needed
 - **Say what a human should do, or say nothing is needed.** Never leave someone guessing whether they are blocked
-- **No status theatre.** Do not narrate steps, list what you rejected, or summarise what you already said
+- **No status theatre.** Do not narrate rejected work or repeat what you already said
 - **When something breaks, give the error verbatim.** Paste the trace, then say in one plain sentence what it means
 - **Report a measurement, not an impression.** "90 pass, 0 fail" beats "tests look good"
 
@@ -118,9 +124,9 @@ If reading your message takes longer than doing the thing, you have cost time.
 - **Biome** lints and formats JS, TS and JSON.
 - **Prettier** formats Markdown and YAML, which Biome does not own here.
 - **TypeScript** runs as `tsc --noEmit` with strict checking and `noUncheckedIndexedAccess`.
-- **commitlint, husky and lint-staged** enforce the commit gate: `.husky/commit-msg` runs `commitlint --edit` and
-  `.husky/pre-commit` runs `lint-staged` over staged files. `bun install` wires both through the `prepare` script.
-- **`gh`** is the repository transport. Receipt reads, receipt writes, issue reads and check reads go through it.
+- **commitlint, husky and lint-staged** are installed and configured as development tools. The repository has no project
+  `pre-commit` or `commit-msg` script under `.husky/`, so they do not enforce a commit gate automatically.
+- **`gh`** is the repository transport for receipt, issue and check operations.
 
 ```bash
 bun install          # install dev tooling and run the package prepare script
@@ -178,8 +184,8 @@ your code produces proves the code is self-consistent and nothing else. Assert a
 The same failure hides in fixtures. A fake `gh` that matched a path by substring accepted `repos/<node id>/issues`,
 which 404s against real GitHub. **Make a fixture reject what the real service would reject.**
 
-**Mutation-test every new test before trusting it.** Break the thing the test claims to check, confirm it fails,
-restore. This is not optional and it is not slow. It has caught, so far:
+**Mutation-test every new test before trusting it.** Deliberately break the claimed behavior and confirm the test
+catches the mutation before restoring the code. This is not optional and it is not slow. It has caught, so far:
 
 - a receipt idempotency test that passed with the emit condition deliberately broken, because its fixture queue ran dry
   on the second pass and the error was swallowed
@@ -188,23 +194,35 @@ restore. This is not optional and it is not slow. It has caught, so far:
   the normal path
 
 **Nothing is proven until it has run inside a real session.** Handlers invoked as child processes against a fake `gh`
-prove the handlers. They say nothing about whether the harness loads the plugin, fires the hook, or accepts what comes
-back.
+prove the handlers. They do not prove the end-to-end harness contract.
 
 ## Documentation hygiene
 
-**[`docs/markdown-style.md`](docs/markdown-style.md) is the style guide for every Markdown file in this repo.** It
-covers document layout, headings, lists, code blocks, links, images and tables. Read it before restructuring a document.
+**[`docs/markdown-style.md`](docs/markdown-style.md) is the style guide for every Markdown file in this repo.** Read it
+before restructuring a document. It covers:
+
+- document layout
+- headings and lists
+- code blocks and links
+- images and tables
+
 The rules below are this project's additions to it, not a replacement.
 
-- **Sentence case for headings, bold lead-in labels and table headers.** Acronyms and proper names keep their form: DKM,
-  AI, API, PR, SHA, CI, GitHub, TOML, Markdown, Biome, Bun, Prettier, TypeScript, Claude Code
+- **Sentence case for headings, bold lead-in labels and table headers.** Acronyms and proper names keep their form.
+  Preserve these spellings:
+  - DKM, AI, API, PR, SHA and CI
+  - GitHub, TOML and Markdown
+  - Biome, Bun, Prettier and TypeScript
+  - Claude Code
 - **No clumped prose.** No block over four lines. Three or more consecutive bolded-lead-in paragraphs are a list. An
   enumeration of three or more items inside a sentence is a list
 - **A table must earn itself.** Use one for uniform data across two dimensions. A two-column table of labels and prose
   is a list; so is a one-column table
-- **Never drop a measured figure, a citation, a section reference or a limitation** to save space. Reformatting must be
-  lossless
+- **Never drop information to save space.** Reformatting must preserve:
+  - measured figures
+  - citations
+  - section references
+  - limitations
 - **Never create a second file overlapping an existing one.** Update the existing file
 - **Never rewrite the design spec.** [`docs/superpowers/specs/`](docs/superpowers/specs/) records what was decided and
   when. Its structure and framing follow the style guide; its substance is history and is not edited to match what was
@@ -236,20 +254,37 @@ describe it is incomplete.
 **`main` is PR-gated. No stray commits.**
 
 1. **Branch.** `<type>/<short-slug>`, matching the commit types below
-1. **Commit** in [Conventional Commits](https://www.conventionalcommits.org/) form: `<type>[scope]: <description>`, a
-   single imperative sentence, lowercase, no trailing period. Allowed types: `feat`, `fix`, `refactor`, `docs`, `test`,
-   `chore`, `style`, `perf`
+1. **Commit** in [Conventional Commits](https://www.conventionalcommits.org/) form: `<type>[scope]: <description>`, as a
+   lowercase imperative sentence without a trailing period. Allowed types are:
+   - `feat`
+   - `fix`
+   - `refactor`
+   - `docs`
+   - `test`
+   - `chore`
+   - `style`
+   - `perf`
 1. **Push the branch** and open a PR with `gh pr create`
 1. **Merge** the verified head with
-   `gh pr merge <number> --squash --delete-branch --match-head-commit <40-character-head-sha>`. Capture `headRefOid`
-   from `gh pr view`, verify that exact SHA, then put its literal value in the merge command
+   `gh pr merge <number> --squash --delete-branch --match-head-commit <40-character-head-sha>`:
+
+   1. Capture `headRefOid` from `gh pr view`.
+   1. Verify that exact SHA.
+   1. Put its literal value in the merge command.
 
 **Agents may merge without per-PR approval** when all of these hold:
 
-- the PR targets `main`, is not a draft, and GitHub reports it mergeable
+- the PR targets `main`
+- the PR is not a draft
+- GitHub reports the PR mergeable
 - every required GitHub check passes
-- `bun run lint`, `bun run typecheck` and `bun test` pass against a fresh checkout of the PR head, not of your branch
-- the change is not outward-facing, does not migrate data, and does not change an interface someone depends on
+- all local gates pass against a fresh checkout of the PR head, not of your branch:
+  - `bun run lint`
+  - `bun run typecheck`
+  - `bun test`
+- the change is not outward-facing
+- the change does not migrate data
+- the change does not change an interface someone depends on
 - there is no unresolved review finding and no known regression
 
 If any condition cannot be verified, leave the PR open and report the blocker. Direct and force pushes to `main` remain
@@ -259,7 +294,7 @@ forbidden. Never use `--admin` or `--auto` to override or defer the gate. Small 
 conflicts on merge, and is invisible to anyone not in that file. Reference the issue in the PR so merging closes it:
 `Closes #12`. A short-lived, in-session task list is fine; anything that outlives the session is not.
 
-**File what you do not fix.** A defect found while doing something else is an issue, with the evidence that found it.
+**File what you do not fix.** A defect found while doing something else is an issue with the evidence that found it.
 Folding an unrelated fix into a PR hides it; leaving it unrecorded loses it.
 
 ## Critical do-nots
@@ -277,8 +312,9 @@ Folding an unrelated fix into a PR hides it; leaving it unrecorded loses it.
   notifications, and a handler that merely takes notes in one breaks worktree creation for the whole session
 - **Do not** invent an environment variable. `CLAUDE_CODE_SESSION_ID` exists; `CLAUDE_SESSION_ID` does not, and a test
   that sets the invented name will pass forever
-- **Do not** commit directly to `main`, force-push, rewrite published history, or delete a branch other than a merged
-  feature branch
+- **Do not** commit directly to `main`
+- **Do not** force-push or rewrite published history
+- **Do not** delete a branch other than a merged feature branch
 - **Do not** commit `.env`, or any credential. This repository is public: assume anything committed is published
 - **Do not** commit a path that only exists on your machine. User-home, drive-qualified and scratch paths are invisible
   to everyone else. Name the tool, not your copy of it
@@ -288,11 +324,15 @@ Folding an unrelated fix into a PR hides it; leaving it unrecorded loses it.
 ## Delegation
 
 Bulk mechanical work goes to a worker CLI so the main agent spends its budget on judgement. **Delegate the
-transformation, never the decision**: what the structure should be, what an API contract is, and anything where being
-wrong is quiet and expensive all stay here.
+transformation, never the decision**: structural and API-contract decisions stay here, as does other judgement whose
+errors would be quiet and expensive.
 
-A worker has none of your context. Everything it needs goes in the brief: every file it may create, the output format
-concretely, the house rules from this file, and what must survive verbatim.
+A worker has none of your context. Its brief must include:
+
+- every file it may create
+- the concrete output format
+- the relevant house rules from this file
+- anything that must survive verbatim
 
 | Worker            | Use for                                           | Standing gotcha                                                         |
 | ----------------- | ------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -300,8 +340,8 @@ concretely, the house rules from this file, and what must survive verbatim.
 | `opencode-fanout` | The same shape of work on a different worker pool | Exits 0 when its input was outside `--dir` and auto-rejected            |
 | `codex`           | Image generation, which Claude Code cannot do     | Needs an absolute output path; resize before anything lands in the repo |
 
-**Always tell a Devin worker: do not run any shell command, test, formatter or git command; write the files only.** One
-rejected tool call ends the run without an error, and a worker has reported success having produced zero files.
+**Always tell a Devin worker: do not execute commands; write the files only.** One rejected tool call ends the run
+without an error, and a worker has reported success having produced zero files.
 
 **Verify every worker's output yourself.** Never report success from an exit code. Run the tests, read the parts that
 carry risk, and grep the log for a rejected tool call. Say what you corrected when you report — that is what tells the

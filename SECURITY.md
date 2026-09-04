@@ -12,8 +12,8 @@ Expect an acknowledgement within three working days and an assessment within sev
 DKM answers permission prompts on its installer's behalf and publishes to GitHub, so the interesting failures are about
 authority and disclosure rather than memory safety:
 
-- **Consent laundering.** Any path from pending-event, receipt, headline or session-report content into `decide()`. The
-  current engine accepts only `DecisionInput` and `Policy`
+- **Consent laundering.** Any inbound-content path into `decide()`. The current engine accepts only `DecisionInput` and
+  `Policy`
 - **Escaping the policy.** A call matching a predicate in `src/decide.ts` that does not receive its documented `ask` or
   `deny` result
 - **Disclosure through a receipt.** Any automatically sourced content outside the fields constructed in

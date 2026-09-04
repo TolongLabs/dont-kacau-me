@@ -1,6 +1,8 @@
-import { fetchSince, findReceiptComment } from '../github'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { fetchSince, findReceiptComment, repoNodeId } from '../github'
 import { parseReceipt } from '../receipt'
-import { drainPending, readBindings, readCursors, recipientKey, writeCursors, writePending } from '../store'
+import { dkmPath, drainPending, readBindings, readCursors, recipientKey, writeCursors, writePending } from '../store'
 import type { PendingEvent, Receipt, TrackingTier, WorkItemRef } from '../types'
 
 function short(sha: string): string {
@@ -67,11 +69,21 @@ function tierFor(recipient: Recipient, nodeId: string): { tier: TrackingTier; it
   return null
 }
 
-function trackedRepoIds(recipients: Recipient[]): string[] {
+/**
+ * An ambient-only worktree has neither a bound nor a followed item, so deriving the set from those
+ * alone left it empty and `ingest()` never ran a query at all. The flag was stored and honoured by
+ * `tierFor()` while being unreachable in practice. The current repository is resolved once, and
+ * only when some recipient actually wants ambient.
+ */
+function trackedRepoIds(root: string, recipients: Recipient[]): string[] {
   const ids = new Set<string>()
   for (const r of recipients) {
     if (r.bound !== null) ids.add(r.bound.repoNodeId)
     for (const f of r.followed) ids.add(f.repoNodeId)
+  }
+  if (ids.size === 0 && recipients.some((r) => r.ambient)) {
+    const current = repoNodeId(root)
+    if (current !== null) ids.add(current)
   }
   return [...ids]
 }
@@ -109,7 +121,7 @@ export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: ()
   const receipts = new Map<string, Receipt | null>()
   const cursors = readCursors(root)
   const all = recipients(root)
-  for (const repoNodeId of trackedRepoIds(all)) {
+  for (const repoNodeId of trackedRepoIds(root, all)) {
     const since = cursors.cursors[repoNodeId] ?? new Date(Date.now() - 86_400_000).toISOString()
     if (minIntervalMs > 0 && Date.now() - Date.parse(since) < minIntervalMs) continue
     if (now() - startedAt > budgetMs) break
@@ -139,4 +151,17 @@ export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: ()
 
 export function drainAndRender(root: string): string {
   return render(drainPending(root, recipientKey(root)))
+}
+
+/**
+ * DKM discovers no sessions and no worktrees; a binding exists only because a human wrote one. That
+ * is deliberate, but it means an unbound worktree publishes nothing and says nothing, so the user
+ * finds out days later that no receipt was ever written. Conditioned on the policy file, because a
+ * repository the installer never opted into must stay silent.
+ */
+export function unboundHint(root: string): string {
+  if (!existsSync(join(dkmPath(root), 'policy.toml'))) return ''
+  const binding = readBindings(root).bindings.find((b) => b.worktreePath === root)
+  if (binding !== undefined && binding.bound !== null) return ''
+  return '⟨dkm⟩ this worktree is not bound to a work item, so it will publish no receipts. Bind it with /dont-kacau-me:dkm-bind <number>.\n'
 }

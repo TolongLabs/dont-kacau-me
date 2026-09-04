@@ -132,7 +132,7 @@ handlers consume the other fields conditionally.
 | ------------------- | ------------------------------------------ | -------------------------------------------------------------- |
 | `PermissionRequest` | `tool_name`; `tool_input` may be any value | Append a decision record, then emit a decision object or `{}`  |
 | `Stop`              | Valid `cwd`; optional `stop_hook_active`   | Measure a bound worktree and possibly upsert its receipt       |
-| `SessionStart`      | Valid `cwd`                                | Run ingest, drain this recipient queue and write rendered text |
+| `SessionStart`      | Valid `cwd`                                | Run ingest, prepend any unbound hint, drain and write the text |
 | `UserPromptSubmit`  | Valid `cwd`                                | Run throttled ingest, drain and write rendered text            |
 | `SessionEnd`        | Valid `cwd`; optional string `reason`      | Atomically replace `.dkm/last-session.json`                    |
 

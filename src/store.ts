@@ -47,14 +47,20 @@ function atomicWrite(target: string, data: string): void {
   renameSync(tmp, target)
 }
 
+/**
+ * The fallback is cloned, never handed out. Callers mutate what they read — `ingest` assigns into
+ * `cursors.cursors`, `bindingFor` pushes onto `file.bindings` — so returning the module-level empty
+ * object let one repository's state leak into the next read for a different root in the same
+ * process. It survived because a hook is one process for one repository.
+ */
 function readJson<T>(root: string, relative: string, guard: (v: unknown) => v is T, fallback: T): T {
   const target = join(dkmPath(root), relative)
   try {
     const raw = readFileSync(target, 'utf8')
     const parsed: unknown = JSON.parse(raw)
-    return guard(parsed) ? parsed : fallback
+    return guard(parsed) ? parsed : structuredClone(fallback)
   } catch {
-    return fallback
+    return structuredClone(fallback)
   }
 }
 

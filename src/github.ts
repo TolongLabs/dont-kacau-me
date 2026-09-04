@@ -206,8 +206,19 @@ export function workItemByNumber(repoRoot: string, number: number): WorkItemRef 
   const id = parsed.id
   const num = parsed.number
   if (!isString(id) || !isNumber(num)) return null
-  const repoRun = runner.run(repoRoot, ['repo', 'view', '--json', 'id', '--jq', '.id'])
-  const repoNodeId = repoRun.ok ? repoRun.stdout.trim() : ''
-  if (repoNodeId.length === 0) return null
-  return { repoNodeId, itemNodeId: id, number: num, kind: parsed.isPr === true ? 'pr' : 'issue' }
+  const repo = repoNodeId(repoRoot)
+  if (repo === null) return null
+  return { repoNodeId: repo, itemNodeId: id, number: num, kind: parsed.isPr === true ? 'pr' : 'issue' }
+}
+
+/**
+ * The ambient tier polls a repository nobody has bound an item in, so there is no WorkItemRef to
+ * take a repoNodeId from. Resolved here rather than assumed, because the id keys the ingest cursor
+ * and a wrong one silently re-delivers or drops every ambient event for that repository.
+ */
+export function repoNodeId(repoRoot: string): string | null {
+  const run = runner.run(repoRoot, ['repo', 'view', '--json', 'id', '--jq', '.id'])
+  if (!run.ok) return null
+  const id = run.stdout.trim()
+  return id.length > 0 ? id : null
 }

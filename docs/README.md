@@ -328,7 +328,7 @@ Claude Code namespaces DKM commands as `/dont-kacau-me:<command>`. There is no d
 ## Configuration
 
 `.dkm/policy.toml` is the only committed file under `.dkm/`; all other DKM state is git-ignored. Blast-radius rules run
-before the file and cannot be overridden from it. Anything unmatched defaults to the human path.
+before the file and cannot be overridden from it. Anything unmatched defaults to the human path: `ask`.
 
 | Key or section    | Value shape                  | Controls                                      | Safety behavior                                   |
 | ----------------- | ---------------------------- | --------------------------------------------- | ------------------------------------------------- |
@@ -340,17 +340,16 @@ before the file and cannot be overridden from it. Anything unmatched defaults to
 
 ## Using DKM: five moments
 
-The commands are few, and you stop touching them quickly. These are the five moments where the plugin changes a working
-day.
+Five moments show where the plugin changes a working day.
 
-### The teammate who pings you at 3am
+### 1. Overnight handoff — skip the 3am ping
 
 Someone needs to know whether your agent finished before they can start. Without DKM they message you, and the answer
-waits until you wake. With DKM, the work item already carries receipt evidence.
+waits until you wake. With DKM, the work item carries the head SHA, changed paths and check results.
 
-You did nothing to publish it. The `Stop` hook wrote the receipt after the worktree was bound.
+The developer does nothing to publish it; the first bound `Stop` writes the receipt.
 
-### The contract that changed underneath you
+### 2. Contract change — warn a dependent session
 
 Agent A alters a database schema on PR #81. Agent B is working a declared dependent issue against the old shape in
 another worktree and would normally discover the mismatch at merge, after both sides have paid for it.
@@ -363,9 +362,9 @@ When #81 appears in ingest and receipt enrichment stays within budget, B's next 
 observed SHA. B can re-read the source rather than trusting prose. The worktrees may be on different machines when each
 has the repository and an authenticated `gh`.
 
-### The three sessions all waiting on you
+### 3. Routine prompts — clear the decision queue
 
-Three agents stop on routine prompts:
+Three agents stop on routine prompts that require no new judgement:
 
 - run the formatter
 - run the tests
@@ -374,7 +373,7 @@ Three agents stop on routine prompts:
 Write those grants once in `.dkm/policy.toml`, and they stop reaching you. A prompt with a recognized migration path
 still waits because blast-radius rules run before the allow list and cannot be switched off from policy.
 
-### The morning after
+### 4. Morning review — inspect the decision log
 
 Instead of reading three transcripts to reconstruct the night, run:
 
@@ -385,7 +384,7 @@ Instead of reading three transcripts to reconstruct the night, run:
 The output gives the total decision count and the five most recent records, including each record's rule and input
 summary. The full append-only history remains in `.dkm/decisions.jsonl`.
 
-### The thing the agent could not decide
+### 5. Human judgement — report a blocker
 
 An agent reaches a genuine judgement call that policy does not cover. Record a reported blocker:
 
@@ -393,8 +392,8 @@ An agent reaches a genuine judgement call that policy does not cover. Record a r
 /dont-kacau-me:dkm-note blocker Two viable shapes for the retry policy; needs a human call
 ```
 
-The blocker rides the next receipt that the emit predicate publishes. Its reported status remains separate from measured
-fields.
+The blocker rides the next receipt that the emit predicate publishes. Its **reported** status stays separate from
+measured fields, so developers and teammates can see it without an interruption.
 
 ## Repository layout
 
@@ -449,25 +448,31 @@ test/
 
 ## What DKM cannot do
 
-- **No live mid-turn delivery.** A session learns about a receipt when it starts or receives a prompt. Ingest is a
-  cursored pull on injection hooks.
-- **No cross-machine propagation beyond GitHub.** v1 uses GitHub comments and each checkout's local `.dkm/` state.
-- **No inbound consent path.** `decide()` accepts only permission input and parsed policy. It imports neither the
-  pending store nor the GitHub client, so fetched content cannot become a grant through the engine.
-- **No learning precedent store yet.** v1 authority comes from committed policy, not accumulated inference.
-- **No delivery receipt.** A queued event is removed when a session drains it. Nothing records whether the model acted
-  on it.
-- **No automatic stale-head check.** Ingest does not compare a receipt's observed SHA with the current remote head.
-- **No enforced hop budget.** `rootId` and `hops` are written and shape-checked but never used for control flow.
-- **Narrow ambient feed.** Ambient ingest has no separate @mention or base-branch CI source.
+- **No live mid-turn delivery.** A session learns about a receipt when it starts or receives a prompt because ingest is
+  a cursored pull on injection hooks. A supervised watch or cross-session messaging needs a lifecycle v1 does not have.
+- **No cross-machine propagation beyond GitHub.** v1 uses one GitHub comment per work item and each checkout's local
+  `.dkm/` state. Reaching a machine beyond what the repository carries is a v3 concern.
+- **No inbound consent path.** Another Claude session cannot approve a prompt, and a relayed approval is untrusted.
+  `decide()` accepts only permission input and policy, importing neither the pending store nor the GitHub client.
+- **No learning precedent store yet.** v1 authority comes from human-written, committed policy, not accumulated
+  inference or precedent.
+- **No delivery receipt.** A queued event is removed when a session drains it. Nothing records whether the model acted,
+  so an ignored injected delta looks identical to one it used.
+- **No automatic stale-head check.** Ingest does not compare a publisher's observed SHA with the current remote head
+  before rendering the receipt.
+- **No enforced hop budget.** `rootId` and `hops` are written and shape-checked but never incremented, rejected or used
+  for control flow.
+- **Narrow ambient feed.** Ambient ingest sees issues and PRs from the updated-items query, with no separate @mention or
+  base-branch CI source.
 
 ## Contributing
 
-Issues and pull requests are welcome. [`CONTRIBUTING.md`](../CONTRIBUTING.md) contains setup and review rules.
+Issues and pull requests are welcome. [`CONTRIBUTING.md`](../CONTRIBUTING.md) covers setup, the commit convention and
+two non-negotiable test rules: pin the harness's contract and mutation-test every new test.
 
 - [`AGENTS.md`](../AGENTS.md) — canonical instructions for humans and agentic tools
 - [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) — the Contributor Covenant
-- [`SECURITY.md`](../SECURITY.md) — private vulnerability reporting
+- [`SECURITY.md`](../SECURITY.md) — report a vulnerability privately, never as a public issue
 - [`CHANGELOG.md`](../CHANGELOG.md) — release history and known limitations
 
 ## Licence

@@ -73,6 +73,21 @@ test('every slash command invokes the CLI through the plugin root', () => {
   }
 })
 
+/**
+ * Claude Code collapses a Bash result to one line, so a command's stdout never reaches the human. An
+ * instruction to show it "verbatim" is therefore satisfiable by claiming it was shown, and that is
+ * what happened: `dkm-init` printed the whole onboarding and the user saw `Ran 1 shell command`,
+ * then asked what to do next. A command whose value is its output must restate it in the reply.
+ */
+test('no command tells the model to rely on output the human cannot see', () => {
+  const dir = join(root, 'commands')
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.md'))) {
+    const body = readFileSync(join(dir, file), 'utf8')
+    expect(body).not.toMatch(/verbatim/i)
+    expect(body).toMatch(/cannot see|reproduce|confirm in one line|report the result/i)
+  }
+})
+
 test('the committed policy parses and grants nothing that trips a blast-radius rule', () => {
   const policy = readFileSync(join(root, '.dkm', 'policy.toml'), 'utf8')
   expect(policy).toContain('version = 1')

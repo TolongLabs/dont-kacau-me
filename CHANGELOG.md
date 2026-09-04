@@ -40,6 +40,13 @@ those are called out under **Changed** with the word **Breaking**.
 - The commands table no longer lists `dkm revive` as though it were typeable. There is no `dkm` binary; the supervisor
   is started as `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts revive`, as the section below the table already showed.
 
+### Fixed
+
+- Slash commands no longer assume the human can read a command's stdout. Claude Code collapses a Bash result to one
+  line, so `dkm-init` printed the entire onboarding — the failed check, the grant, the next step — into a fold, and the
+  user saw `Ran 1 shell command` and asked what to do next. `dkm-init`, `dkm-status` and `dkm-note` now restate what
+  matters in the reply, and a packaging test rejects any command that tells the model to show output "verbatim".
+
 ### Known limitations
 
 - `money`, `egress` and part of `data-loss` still match command patterns anywhere in a payload, so text containing

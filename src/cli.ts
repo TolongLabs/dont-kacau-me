@@ -1,6 +1,7 @@
 import { workItemByNumber } from './github'
 import { readReport, writeReport } from './hooks/report'
 import { repoRoot } from './hooks/runtime'
+import { runInit } from './init'
 import { runSupervised } from './revive-run'
 import { listPending, readBindings, readDecisions, recipientKey, writeBindings } from './store'
 import type { Binding, WorkItemRef } from './types'
@@ -131,12 +132,18 @@ function main(): void {
     fail(`run did not finish after ${report.attempts} attempt(s): ${report.outcome.kind}`)
   }
 
+  if (command === 'init') {
+    const result = runInit(root, rest.includes('--force'))
+    process.stdout.write(result.output)
+    return
+  }
+
   if (command === 'status' || command === undefined) {
     process.stdout.write(`${status(root)}\n`)
     return
   }
 
-  fail(`unknown command: ${command}\nexpected one of: bind, follow, unfollow, note, blocker, revive, status`)
+  fail(`unknown command: ${command}\nexpected one of: init, bind, follow, unfollow, note, blocker, revive, status`)
 }
 
 main()

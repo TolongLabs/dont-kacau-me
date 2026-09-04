@@ -8,6 +8,44 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-04
+
+### Added
+
+- `dkm init`, reachable as `/dont-kacau-me:dkm-init`. It checks Bun, `gh`, `gh` authentication and the GitHub remote,
+  naming the command that fixes each failure, then writes a starter `.dkm/policy.toml` generated from the directories
+  and package scripts the repository actually has. It never replaces an existing policy without `--force`, because that
+  file is the human grant. Re-run it later to diagnose a repository.
+- A `SessionStart` line telling an unbound worktree that it will publish no receipts, shown only where a policy file
+  exists so a repository nobody opted into stays silent ([#25](https://github.com/TolongLabs/dont-kacau-me/issues/25)).
+
+### Fixed
+
+- **Blast-radius rules read paths from path-designating fields rather than from prose.** `outside-worktree` walked every
+  string in a payload and split it on whitespace, so a `WebSearch` for `/etc/hosts`, a todo mentioning `/usr/local` and
+  an `AskUserQuestion` offering `/dkm-init` were all denied. It is the one trip that returns `deny`, so those calls
+  failed outright with no human fallback, and it could deny `AskUserQuestion` itself. `Bash` still has its whole command
+  scanned ([#28](https://github.com/TolongLabs/dont-kacau-me/issues/28)).
+- The ambient tier could never deliver an event. The repositories to poll were derived only from bound and followed
+  items, so an ambient-only worktree produced an empty set and no query ran at all
+  ([#24](https://github.com/TolongLabs/dont-kacau-me/issues/24)).
+- `readJson` returned the module-level empty-state objects by reference, and callers mutate what they read, so one
+  repository's state leaked into the next read for a different root in the same process
+  ([#26](https://github.com/TolongLabs/dont-kacau-me/issues/26)).
+
+### Changed
+
+- Installing no longer starts with a clone: `claude plugin marketplace add TolongLabs/dont-kacau-me` takes the
+  repository directly. Getting started now leads with the policy half, which works in one session with no GitHub issue.
+- The commands table no longer lists `dkm revive` as though it were typeable. There is no `dkm` binary; the supervisor
+  is started as `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts revive`, as the section below the table already showed.
+
+### Known limitations
+
+- `money`, `egress` and part of `data-loss` still match command patterns anywhere in a payload, so text containing
+  `deploy` or `delete from` causes a redundant prompt. Each returns `ask`, so the cost is a prompt rather than a failure
+  ([#29](https://github.com/TolongLabs/dont-kacau-me/issues/29)).
+
 ## [0.3.0] — 2026-09-04
 
 Closes every issue that was open at 0.2.0.
@@ -90,6 +128,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/TolongLabs/dont-kacau-me/releases/tag/v0.1.0

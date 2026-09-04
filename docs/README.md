@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
 ![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/v0.3.0-informational?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.4.0-informational?style=for-the-badge)
 
 **A Claude Code plugin that stops your AI coding sessions from interrupting you.**
 
@@ -118,60 +118,60 @@ switched off from the policy file**:
 
 ## Getting started
 
-**You need:** [Claude Code](https://code.claude.com/docs/en/plugins), an authenticated [`gh`](https://cli.github.com/),
-[Bun](https://bun.sh/), and a repository whose work you track in GitHub issues or PRs.
+**You need** [Claude Code](https://code.claude.com/docs/en/plugins) and [Bun](https://bun.sh/). For receipts you also
+need an authenticated [`gh`](https://cli.github.com/) and a repository whose work you track in GitHub issues or PRs; for
+the policy half you need neither.
 
-1. **Clone it.**
-
-   ```bash
-   git clone https://github.com/TolongLabs/dont-kacau-me.git
-   ```
-
-1. **Install the plugin.** The trailing slash matters; a bare `.` is rejected.
+1. **Install the plugin.** No clone needed.
 
    ```bash
-   claude plugin marketplace add ./
+   claude plugin marketplace add TolongLabs/dont-kacau-me
    claude plugin install dont-kacau-me@tolonglabs
    ```
 
-   To try it for one session without installing, use `claude --plugin-dir /absolute/path/to/dont-kacau-me` instead.
+   To try it for one session without installing, clone the repository and use
+   `claude --plugin-dir /absolute/path/to/dont-kacau-me` instead. Adding a local clone as a marketplace works too, but
+   the trailing slash matters there: `claude plugin marketplace add ./`, never a bare `.`.
 
-1. **Write your policy.** Create `.dkm/policy.toml` in the repository where DKM will run, and commit it. Start small:
+1. **Set it up in a repository.** Restart Claude Code so it loads the plugin, then run:
 
-   ```toml
-   version = 1
-   contractGlobs = ["src/**/types.ts"]
-
-   [[allow]]
-   tool = "Read"
-
-   [[allow]]
-   tool = "Bash"
-   match = "bun test"
+   ```text
+   /dont-kacau-me:dkm-init
    ```
 
-   This file is your grant. Do not copy a policy whose authority you do not intend to hand over.
+   This checks your prerequisites, writes a starter `.dkm/policy.toml` built from what the repository actually contains,
+   and prints what just became automatic. Read the file it wrote, delete anything you did not mean to grant, and commit
+   it. **That file is your grant**, so treat it as one: never copy a policy whose authority you do not intend to hand
+   over.
 
-1. **Tell a session which work item it owns.**
+   Nothing else is required. Your prompts stop arriving from here on, and this half works alone, in one session, with no
+   GitHub issue.
+
+1. **Only if you want receipts:** tell a session which work item it owns.
 
    ```text
    /dont-kacau-me:dkm-bind 12
    ```
 
-That is the whole setup. Receipts now publish themselves.
+   Receipts then publish themselves. This step needs an authenticated `gh` and a GitHub remote; step 2 does not.
 
 ## The five commands
 
-| Command                                  | When you use it                                                   |
-| ---------------------------------------- | ----------------------------------------------------------------- |
-| `/dont-kacau-me:dkm-bind 12`             | Once per worktree, to name the issue or PR its receipts belong to |
-| `/dont-kacau-me:dkm-follow 81`           | To be told when someone else's work item changes                  |
-| `/dont-kacau-me:dkm-status`              | To see what happened overnight and every decision made for you    |
-| `/dont-kacau-me:dkm-note blocker <text>` | When the agent hits a real judgement call and should not guess    |
-| `dkm revive "<prompt>"`                  | To start a long run that survives hitting your usage limit        |
+| Command                                  | When you use it                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------- |
+| `/dont-kacau-me:dkm-init`                | Once per repository, to check prerequisites and write a starter policy |
+| `/dont-kacau-me:dkm-bind 12`             | Once per worktree, to name the issue or PR its receipts belong to      |
+| `/dont-kacau-me:dkm-follow 81`           | To be told when someone else's work item changes                       |
+| `/dont-kacau-me:dkm-status`              | To see what happened overnight and every decision made for you         |
+| `/dont-kacau-me:dkm-note blocker <text>` | When the agent hits a real judgement call and should not guess         |
 
 Claude Code namespaces a plugin's commands, so every DKM command is typed as `/dont-kacau-me:<command>`, never
 `/<command>`.
+
+Re-running `dkm-init` is also how you diagnose a repository later. It never replaces a policy that already exists unless
+you pass `--force`.
+
+The usage-limit supervisor is not a slash command; it is a process you start yourself, described next.
 
 ### Surviving a usage limit
 
@@ -391,7 +391,7 @@ successful emit for that work item.
 <details>
 <summary><b>How the supervisor decides to wait</b></summary>
 
-`dkm revive` resumes the same session by ID rather than replaying the original prompt, so completed work is not
+The supervisor resumes the same session by ID rather than replaying the original prompt, so completed work is not
 repeated. What it does on each outcome:
 
 | Situation                      | Supervisor action                                  |

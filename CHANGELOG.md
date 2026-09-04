@@ -14,17 +14,18 @@ Closes every issue that was open at 0.2.0.
 
 ### Added
 
-- Ingest measures its own wall clock and stops fetching past a budget, defaulting to 8s, after which events arrive as
-  headlines. A receipt is fetched once per ingest however many worktrees receive it. Measured against a live repository:
-  a cursored issue fetch of 30 items takes 0.78–1.27s and a single comment fetch 0.42–1.01s, against a 15s hook timeout
-  ([#4])
+- Ingest measures its own wall clock against an 8s default budget. It stops later repository queries and skips receipt
+  enrichment for already-fetched events after the budget, so those events render as headlines. A receipt is fetched once
+  per ingest however many worktrees receive it. Measured against a live repository: a cursored issue fetch of 30 items
+  takes 0.78–1.27s and a single comment fetch 0.42–1.01s, against a 15s hook timeout ([#4])
 
 ### Fixed
 
 - Delivery is now per recipient. `.dkm/pending/` is one queue per worktree and the tracking tier is resolved for the
   worktree that is reading, so a followed item is no longer labelled bound and one session no longer consumes another's
   event ([#9])
-- The receipt's decision summary counts the turn that produced it rather than the session's whole lifetime ([#6])
+- The receipt's decision summary starts at the prior successful emit's global log offset, then counts matching-session
+  records instead of the session's whole lifetime ([#6])
 - One repository, one policy. `loadPolicy` resolves through the shared store instead of the caller's own checkout, so a
   session cannot be governed by — or change — a policy on its own branch ([#10])
 
@@ -35,10 +36,11 @@ contracts at once.
 
 ### Added
 
-- **Surviving a usage limit.** `dkm revive "<prompt>"` supervises a run: when it stops on a usage limit, the supervisor
-  waits for the reset the server itself reported and resumes the same session by id. It waits, it never evades. Pauses
-  are recorded in `.dkm/revivals.jsonl`
-- A `SessionEnd` hook that records which session ended and the reason the harness gave, so a run can be resumed
+- **Surviving a usage limit.** `revive` supervises a run: after a recognised limit, it uses the reported reset when
+  usable, caps one wait at six hours and otherwise applies exponential backoff. It resumes the reported session ID;
+  waits and terminal outcomes are recorded in `.dkm/revivals.jsonl`
+- A `SessionEnd` hook that records which session ended and the reason the harness gave. The current supervisor obtains
+  its resume ID from Claude's JSON result and does not read this ticket
 - Ingest now fills in the receipt for a bound or followed item, so a **followed** item arrives as a contract delta and
   head SHA rather than a bare headline
 - `.dkm/` on the blast-radius table. Nothing previously protected `.dkm/policy.toml`, so an agent holding a broad write
@@ -76,8 +78,16 @@ contracts at once.
 
 ## [0.1.0] — 2026-09-03
 
-Initial implementation: the receipt, the decision engine, the hook bundle, the CLI, plugin packaging and CI. Verified
-against a fake `gh` in a test harness only.
+Initial implementation included:
+
+- the receipt
+- the decision engine
+- the hook bundle
+- the CLI
+- plugin packaging
+- CI
+
+It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.2.0...v0.3.0

@@ -2,460 +2,651 @@
 
 **How DKM is built.** Canonical over [`AGENTS.md`](../AGENTS.md) on technical detail. Implements [`PRD.md`](PRD.md).
 
-This is the implementation-level reference for developers building against DKM or changing its source. It is deeper than
-the narrative in [`README.md`](README.md).
+This reference describes the behavior present in the implementation, plugin manifests and test suite. The
+[`README.md`](README.md) keeps the user-facing narrative; this file names implementation contracts and known boundaries.
 
 Contents:
 
 1. [Architecture](#architecture)
 1. [Storage layout](#storage-layout)
 1. [Hook contracts](#hook-contracts)
-1. [The receipt](#the-receipt)
-1. [Tracking tiers](#tracking-tiers)
-1. [The decision engine](#the-decision-engine)
-1. [Surviving a usage limit](#surviving-a-usage-limit)
-1. [Loops and dedup keys](#loops-and-dedup-keys)
-1. [Failure modes](#failure-modes)
-1. [Testing](#testing)
-1. [Open spikes](#open-spikes)
+   1. [`PermissionRequest`](#permissionrequest)
+   1. [Worktree lifecycle events](#worktree-lifecycle-events)
+   1. [Injection hook output](#injection-hook-output)
+   1. [`Stop`](#stop)
+   1. [`SessionEnd`](#sessionend)
+1. [Receipt contract](#receipt-contract)
+   1. [Receipt rendering and parsing](#receipt-rendering-and-parsing)
+   1. [Receipt emission](#receipt-emission)
+1. [Tracking and ingest](#tracking-and-ingest)
+1. [Policy and decision engine](#policy-and-decision-engine)
+   1. [Policy parser](#policy-parser)
+   1. [Blast-radius evaluation](#blast-radius-evaluation)
+   1. [Allow-rule evaluation](#allow-rule-evaluation)
+   1. [Decision records](#decision-records)
+1. [Usage-limit supervisor](#usage-limit-supervisor)
+   1. [Run classification](#run-classification)
+   1. [Wait calculation](#wait-calculation)
+   1. [Resume loop](#resume-loop)
+1. [Identity and replay boundaries](#identity-and-replay-boundaries)
+1. [Known implementation limits](#known-implementation-limits)
+1. [Test coverage](#test-coverage)
+1. [Recorded measurements](#recorded-measurements)
 
 ## Architecture
 
-**A hook bundle with no daemon.** DKM is distributed as a Claude Code plugin. The harness reads the manifest from
-`.claude-plugin/plugin.json`, the hook declarations from `hooks/hooks.json` and the slash-command frontmatter from
-`commands/*.md`. `hooks/hooks.json` resolves each entrypoint against `${CLAUDE_PLUGIN_ROOT}`.
+DKM is distributed as a Claude Code plugin through these files:
 
-Every moving part is a hook process that starts, does one local operation, writes to `.dkm/` and exits. Nothing runs
-between firings. `NFR-NODAEMON` requires this to be true. The registered handlers are:
+- `.claude-plugin/plugin.json` identifies the plugin.
+- `.claude-plugin/marketplace.json` makes the clone a marketplace source.
+- `hooks/hooks.json` registers handlers.
+- `commands/*.md` supplies slash-command frontmatter.
 
-- `PermissionRequest`: `src/hooks/permission-request.ts`, 5s timeout.
-- `Stop`: `src/hooks/stop.ts`, 20s timeout.
-- `SessionStart`: `src/hooks/session-start.ts`, 15s timeout, matcher `startup|resume|clear`.
-- `UserPromptSubmit`: `src/hooks/user-prompt-submit.ts`, 15s timeout.
+The registered commands in `hooks/hooks.json` are:
 
-The binding constraint is the **hook timeout**. Everything on the hot path must be a local `git` read, a JSON file read
-or write, or at most one `gh` call. The slowest operation permitted is a single `gh` call in `Stop` or
-`SessionStart`/`UserPromptSubmit`.
+| Event               | Entrypoint                        | Timeout | Matcher                  |
+| ------------------- | --------------------------------- | ------- | ------------------------ |
+| `PermissionRequest` | `src/hooks/permission-request.ts` | 5s      | None                     |
+| `Stop`              | `src/hooks/stop.ts`               | 20s     | None                     |
+| `SessionStart`      | `src/hooks/session-start.ts`      | 15s     | `startup\|resume\|clear` |
+| `UserPromptSubmit`  | `src/hooks/user-prompt-submit.ts` | 15s     | None                     |
+| `SessionEnd`        | `src/hooks/session-end.ts`        | 10s     | None                     |
 
-Nothing on the hot path may call a model — which is also why the decision engine resolves by the rule table in
-`src/decide.ts` rather than by inference. `NFR-BUDGET` requires every hook to complete on a repository of at least 5,000
-commits.
+Each command invokes Bun through `${CLAUDE_PLUGIN_ROOT}`. No registered hook imports or calls a model. Repository work
+uses synchronous local I/O and child processes.
 
-Sessions are isolated **one git worktree each**, one branch each. A wrong assumption costs a discarded branch rather
-than a revert, and two sessions cannot corrupt one checkout.
+The hot path is not limited to one `gh` call. A receipt emission calls `fetchChecks()`, then `upsertReceiptComment()`,
+which lists comments before it PATCHes or POSTs. Ingest calls `fetchSince()` for each tracked repository ID and may call
+`findReceiptComment()` for each claimed item until its wall-clock budget is spent.
 
-`src/store.ts` resolves the shared `.dkm/` directory to the main worktree using `git rev-parse --git-common-dir`; the
-parent of the common `.git` directory is the main worktree root. For a plain checkout this is the repository root
-itself. `src/hooks/runtime.ts` resolves the worktree root with `git rev-parse --show-toplevel`.
+`src/github.ts defaultRunner()` gives each `gh` process a 10-second timeout. `src/hooks/runtime.ts repoRoot()` and
+`src/store.ts dkmPath()` give their `git rev-parse` calls 5-second timeouts; commands issued through `src/git.ts` do not
+set a child-process timeout.
 
-```
-worktree A ──┐                      ┌── receipt (one GitHub comment per work item)
-             ├── hooks ── .dkm/ ────┤
-worktree B ──┘                      └── decisions.jsonl (local audit log)
-```
+Receipt, ingest and decision work exists only in hook processes. `src/revive-run.ts` is the exception to pure-hook
+execution: it is an opt-in foreground supervisor started through the CLI. It is not a daemon and does not poll for
+repository events.
+
+DKM assumes sessions use separate git worktrees; it does not create or enforce that isolation. `repoRoot()` resolves the
+caller's worktree with `git rev-parse --show-toplevel`. `dkmPath()` resolves shared state from the parent of
+`git rev-parse --git-common-dir`.
 
 ## Storage layout
 
-All state is under `.dkm/` at the main worktree root, git-ignored. It is per-checkout and disposable; deleting it costs
-only the cursors. The `.gitignore` entry is `.dkm/*` with `!.dkm/policy.toml`.
+The `.gitignore` rules ignore `.dkm/*` and re-include `.dkm/policy.toml`. Most runtime state is therefore disposable,
+while the policy is committed as the installer's grant.
 
-| Path                                 | Holds                                                          | Format         |
-| ------------------------------------ | -------------------------------------------------------------- | -------------- |
-| `.dkm/policy.toml`                   | The installer's decision policy. **Committed**, not ignored    | TOML           |
-| `.dkm/bindings.json`                 | Worktree path to work-item node ID, and followed item node IDs | JSON           |
-| `.dkm/cursor.json`                   | Per-repository ingest cursor                                   | JSON           |
-| `.dkm/pending/<recipient>/<id>.json` | Fetched-but-not-yet-injected items, one queue per worktree     | JSON per event |
-| `.dkm/decisions.jsonl`               | Append-only record of every autonomous decision                | JSONL          |
-| `.dkm/last-emit.json`                | Last emitted state per work item, for delta detection          | JSON           |
-| `.dkm/report/<session>.json`         | Session-authored narrative and blockers for the next receipt   | JSON           |
-| `.dkm/revivals.jsonl`                | Append-only record of every usage-limit pause and resume       | JSONL          |
-| `.dkm/last-session.json`             | The session that ended last, and the reason the harness gave   | JSON           |
+| Path                                 | Location        | Writer or reader                                   | Shape                     |
+| ------------------------------------ | --------------- | -------------------------------------------------- | ------------------------- |
+| `.dkm/policy.toml`                   | Shared store    | `loadPolicy()`                                     | Restricted TOML subset    |
+| `.dkm/bindings.json`                 | Shared store    | `readBindings()` / `writeBindings()`               | `BindingsFile`            |
+| `.dkm/cursor.json`                   | Shared store    | `readCursors()` / `writeCursors()`                 | `CursorFile`              |
+| `.dkm/pending/<recipient>/<id>.json` | Shared store    | `writePending()` / `drainPending()`                | One `PendingEvent`        |
+| `.dkm/decisions.jsonl`               | Shared store    | `appendDecision()` / `readDecisions()`             | One `DecisionRecord`/line |
+| `.dkm/last-emit.json`                | Shared store    | `readLastEmit()` / `writeLastEmit()`               | `LastEmitFile`            |
+| `.dkm/revivals.jsonl`                | Shared store    | `appendRevival()`                                  | One `RevivalRecord`/line  |
+| `.dkm/last-session.json`             | Shared store    | `writeResumeTicket()` / `readResumeTicket()`       | `ResumeTicket`            |
+| `.dkm/report/<session>.json`         | Caller worktree | `readReport()` / `writeReport()` / `clearReport()` | `SessionReport`           |
 
-`.dkm/policy.toml` is the one file that is committed, because it is the human grant that makes autonomy legitimate.
-Everything else is machine state.
+Here, **shared store** means `join(dkmPath(root), ...)`, normally under the main worktree. The report is the deliberate
+code-level exception: `src/hooks/report.ts reportPath()` uses `join(root, '.dkm', ...)`, so a linked worktree keeps its
+own session report beside that checkout.
 
-`src/store.ts` reads and writes these files. Every JSON file carries a `version` field and a runtime guard; an unknown
-shape falls back to an empty default. `decisions.jsonl` is appended to, never rewritten. All writes except the JSONL
-append are atomic: written to a `randomUUID().tmp` file in the same directory and renamed into place.
+The top-level versioned shapes are:
+
+- `BindingsFile`
+- `CursorFile`
+- `LastEmitFile`
+
+Each carries `version: 1`. `PendingEvent`, `Receipt` and `DecisionRecord` have runtime guards but no version field.
+`SessionReport` and `ResumeTicket` are read with their own field checks.
+
+`readJson()` returns an empty default after a missing file, parse failure or guard failure. Invalid JSONL lines are
+skipped. An invalid pending file is not returned and `drainPending()` leaves it on disk because deletion happens only
+after `isPendingEvent()` succeeds.
+
+`writeJson()`, `writeResumeTicket()` and `writeReport()` write a temporary file and rename it. Decision and revival
+records use append-only JSONL. `clearReport()` removes the per-session report after a successful receipt write.
 
 ## Hook contracts
 
-Every hook receives the standard payload on stdin, including `session_id`, `cwd`, `permission_mode` and
-`hook_event_name`. The `HookPayload` type in `src/hooks/runtime.ts` also carries `stop_hook_active`, `tool_name` and
-`tool_input` where the event provides them.
+`src/hooks/runtime.ts` declares this input shape:
 
-| Hook                | Reads                 | Effect                                                             |
-| ------------------- | --------------------- | ------------------------------------------------------------------ |
-| `Stop`              | `stop_hook_active`    | Compute delta; upsert the receipt only if it moved                 |
-| `SessionStart`      | `cwd`                 | Drain `.dkm/pending/`, write to stdout so it reaches the model     |
-| `UserPromptSubmit`  | `cwd`                 | Fetch since cursor, drain pending, write to stdout                 |
-| `PermissionRequest` | tool name, tool input | Answer `allow` or `deny`, or emit nothing to leave it to the human |
-| `SessionEnd`        | `reason`              | Record the session id and the reason, so a run can be resumed      |
+```ts
+type HookPayload = {
+  session_id: string
+  cwd: string
+  hook_event_name: string
+  permission_mode?: string
+  stop_hook_active?: boolean
+  tool_name?: string
+  tool_input?: unknown
+  reason?: string
+}
+```
 
-The registered timeouts are 20s for `Stop`, 15s for `SessionStart` and `UserPromptSubmit`, 10s for `SessionEnd` and 5s
-for `PermissionRequest`.
+At runtime, `readPayload()` validates only that the input is an object with string `session_id` and `cwd`. Individual
+handlers consume the other fields conditionally.
 
-**`PermissionRequest` output.** Exit code 2 is ignored by this event; the decision must be in the payload, and the
-payload is schema-validated. A shape the harness does not recognise is treated as a **hook failure, which denies the
-tool** — so a malformed `allow` is not a no-op, it is a deny the installer never asked for.
+| Hook                | Required by its handler                    | Normal side effect                                             |
+| ------------------- | ------------------------------------------ | -------------------------------------------------------------- |
+| `PermissionRequest` | `tool_name`; `tool_input` may be any value | Append a decision record, then emit a decision object or `{}`  |
+| `Stop`              | Valid `cwd`; optional `stop_hook_active`   | Measure a bound worktree and possibly upsert its receipt       |
+| `SessionStart`      | Valid `cwd`                                | Run ingest, drain this recipient queue and write rendered text |
+| `UserPromptSubmit`  | Valid `cwd`                                | Run throttled ingest, drain and write rendered text            |
+| `SessionEnd`        | Valid `cwd`; optional string `reason`      | Atomically replace `.dkm/last-session.json`                    |
+
+`runHook()` wraps `SessionStart`, `UserPromptSubmit` and `SessionEnd`. It catches handler errors, writes nothing after
+an error and exits 0. `Stop` and `PermissionRequest` use their own top-level catch paths and also exit 0.
+
+### `PermissionRequest`
+
+`src/hooks/permission-request.ts emit()` uses these two non-empty wire shapes:
 
 ```json
 { "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "allow" } } }
 ```
 
 ```json
-{ "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "deny", "message": "why" } } }
+{ "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": "deny", "message": "DKM blast:outside-worktree" } } }
 ```
 
-**There is no wire form for `ask`.** The schema admits only `allow` and `deny`; emitting no decision at all (`{}`) is
-what hands the prompt back to the human. That makes `{}` the only safe output from a handler that has failed, and the
-`deny` message is shown to the model, so it should name the rule that produced it. `src/hooks/permission-request.ts`
-loads `src/policy.ts`, calls `src/decide.ts`, appends the record to `decisions.jsonl` and then emits.
+There is no emitted `behavior: "ask"`. These paths all emit `{}`:
 
-**`WorktreeCreate` and `WorktreeRemove` are provider hooks, not notifications.** `WorktreeCreate` is expected to create
-the worktree and echo its path to stdout; a handler that echoes nothing aborts worktree creation with
-`hook succeeded but returned no worktree path`.
+- the default decision
+- a blast-radius `ask`
+- malformed input
+- a missing repository
+- a caught exception
 
-`WorktreeRemove` is expected to remove it, and one that does not leaves the worktree on disk. Its payload carries
-`name`, never a worktree path or a branch. DKM therefore registers neither, and binding runs through `/dkm-bind`, which
-resolves the work item by number.
+On a normal evaluation, `appendDecision()` runs before `emit()`. If logging itself throws, the catch path emits `{}`
+without a record.
 
-**`SessionStart` and `UserPromptSubmit` output** is plain text on stdout, which the harness adds to the model's context.
-This is the only injection path available without a supervised process.
+The deny message is `DKM ${verdict.rule}`. An allow payload carries no message or updated input. The source never emits
+`hookSpecificOutput.additionalContext`.
 
-The text is produced by `src/hooks/inject.ts`: events are grouped by tier (`bound`, `followed`, `ambient`) and rendered
-by `line()`. For a receipt the line looks like:
+### Worktree lifecycle events
+
+`hooks/hooks.json` registers neither `WorktreeCreate` nor `WorktreeRemove`. Binding is performed by
+`bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts bind <number>`, which is the command in `commands/dkm-bind.md`.
+
+`test/e2e.test.ts bind()` records why: these Claude Code events are provider hooks, and a `WorktreeCreate` handler that
+does not return a path aborts creation. DKM therefore does not use either event for observation.
+
+### Injection hook output
+
+`src/hooks/session-start.ts` calls `ingest(root)` and then `drainAndRender(root)`. The prompt hook calls the same
+functions with `REFETCH_INTERVAL_MS = 120_000`.
+
+When the queue is non-empty, `render()` writes plain text grouped by tracking tier. A queued event with a receipt
+becomes a single line in this shape:
 
 ```text
 #81 a1b2c3d → e5f6g7h · contract: src/types.ts · 2 check(s) failing · blockers: retry policy
 ```
 
-For ambient events without a receipt it looks like:
+The contract, checks and blockers segments are omitted when their source arrays are empty. A receipt with checks and no
+failures renders `checks <count>/<count> pass`. An event without a receipt renders its headline and URL:
 
 ```text
-#82 Headline of the new issue — https://github.com/owner/repo/issues/82
+#82 Headline of the issue — https://github.com/owner/repo/issues/82
 ```
 
-The output ends with a staleness note.
+The output ends with `SHAs are as observed; re-read a file before acting if head has moved since.` The code does not
+perform that head comparison itself.
 
-**`Stop` re-entrancy.** The `stop_hook_active` flag is set when a `Stop` hook is already in flight. The handler must
-return immediately when it is set, or a hook that continues the conversation will loop.
+### `Stop`
 
-**`Stop` can also speak to the model**, through `hookSpecificOutput.additionalContext`. The conversation continues and
-the string is delivered verbatim, so a `Stop` hook can hand the agent a reason to keep going without exit 2. DKM v1 does
-not use this; it is what makes P2b reachable in v2.
+`src/hooks/stop.ts` returns before repository work when:
 
-## The receipt
+- `readPayload()` rejects the input
+- `stop_hook_active` is `true`
+- `repoRoot()` fails
+- no binding matches the resolved worktree path
+- the matching binding has no bound item
 
-One GitHub comment per work item, **edited in place, never appended to**. Its defining property is that measured fact
-and agent narrative are structurally separated.
+The re-entrancy check prevents nested `Stop` handling. Every successful path writes no stdout, whether or not it updates
+a comment.
 
-Every field carries one of three kinds:
+### `SessionEnd`
 
-- **`measured`** — read from `git` or `gh`. May be acted on
-- **`reported`** — asserted by the session about its own state. May be displayed and routed, never treated as fact about
-  the repository
-- **`unverified`** — agent prose. May only ever be displayed
+`src/hooks/session-end.ts` writes `sessionId`, `cwd`, `reason` and `endedAt`. A missing or non-string reason becomes
+`unknown`; the handler does not interpret it.
 
-| Field            | Source                                               | Kind           |
-| ---------------- | ---------------------------------------------------- | -------------- |
-| `work_item`      | Repository and issue/PR node ID                      | measured       |
-| `base` / `head`  | `git rev-parse`                                      | measured       |
-| `changed_paths`  | `git diff --name-status base..head`                  | measured       |
-| `checks`         | `gh api`, carrying check-run ID and attempt          | measured       |
-| `contract_delta` | Changed paths matching the configured contract globs | measured       |
-| `decisions`      | Count and summary from `decisions.jsonl` this turn   | measured       |
-| `blockers`       | Open questions the session could not resolve         | reported       |
-| `narrative`      | The agent's prose                                    | **unverified** |
-| `event_id`       | Assigned once, before any transport                  | measured       |
-| `observed_at`    | Timestamp of measurement, not of publication         | measured       |
+`readResumeTicket()` exists, but no production caller uses it. The usage-limit supervisor obtains its session ID from
+Claude's JSON result instead, so `.dkm/last-session.json` is currently diagnostic state rather than resume input.
 
-The receipt is rendered by `src/receipt.ts`. The human-readable part starts with `<!-- dkm:receipt v1 -->` and ends with
-`<!-- /dkm:receipt -->`.
+## Receipt contract
 
-It contains:
+`src/types.ts Receipt` is the canonical in-process shape. Trust labels below describe provenance; they are not
+serialized as per-field `kind` properties.
 
-- a summary table for `base`, `head` and `observed_at`.
-- the list of changed paths.
-- a table of check results.
-- the contract delta.
-- the decision summary.
-- a block-quoted **Unverified agent narrative** section.
-- a fenced JSON block with the full `Receipt` object.
+| Field           | Type or members                               | Producer                                       | Trust      |
+| --------------- | --------------------------------------------- | ---------------------------------------------- | ---------- |
+| `eventId`       | `string`                                      | `crypto.randomUUID()`                          | Generated  |
+| `workItem`      | `repoNodeId`, `itemNodeId`, `number`, `kind`  | Bound `WorkItemRef`                            | Measured   |
+| `base`          | `string`                                      | `git merge-base HEAD <ref>`                    | Measured   |
+| `head`          | `string`                                      | `git rev-parse HEAD`                           | Measured   |
+| `changedPaths`  | `{ status, path }[]`                          | `git diff --name-status <base>..<head>`        | Measured   |
+| `checks`        | `{ name, checkRunId, attempt, conclusion }[]` | GitHub check-runs response                     | Measured   |
+| `contractDelta` | `string[]`                                    | `changedPaths` matched against `contractGlobs` | Measured   |
+| `decisions`     | `{ allowed, denied, asked }`                  | Local decision-log slice                       | Measured   |
+| `blockers`      | `string[]`                                    | Session report                                 | Reported   |
+| `narrative`     | `string`                                      | Session report                                 | Unverified |
+| `observedAt`    | ISO timestamp string                          | `new Date().toISOString()`                     | Generated  |
 
-`parseReceipt()` reads the first fenced JSON block back from the comment body.
+`ChangedPath.status` accepts the union `A | M | D | R | C`. For a rename or copy, `changedPaths()` stores only the
+destination path. Unknown status letters and malformed output rows are skipped.
 
-Each field is computed as follows:
+`fetchChecks()` runs:
 
-- `work_item` is the `WorkItemRef` from `bindings.json`: `repoNodeId`, `itemNodeId`, `number` and `kind`.
-- `base` is `git merge-base HEAD origin/HEAD` with fallbacks to `origin/main` and `origin/master`.
-- `head` is `git rev-parse HEAD`.
-- `changed_paths` is the parsed output of `git diff --name-status base..head`, producing `ChangedPath` records with
-  status `A`, `M`, `D`, `R` or `C`.
-- `checks` comes from `gh api repos/{owner}/{repo}/commits/<head>/check-runs`, producing `CheckResult` records with
-  `name`, `checkRunId`, `attempt` and a `conclusion` in
-  `success | failure | neutral | cancelled | timed_out | skipped | pending`.
-- `contract_delta` is the subset of `changed_paths` whose path matches a `contractGlobs` pattern from
-  `.dkm/policy.toml`. The glob engine is in `src/git.ts`.
-- `decisions` is a `DecisionSummary` counted from `decisions.jsonl` for the current `session_id`.
-- `blockers` and `narrative` are read from `.dkm/report/<session_id>.json` by `src/hooks/report.ts` and cleared after
-  the receipt is emitted.
-- `event_id` is `crypto.randomUUID()`.
-- `observed_at` is the ISO timestamp of measurement.
+```text
+gh api repos/{owner}/{repo}/commits/<head>/check-runs
+```
 
-Node IDs bind a receipt to its work item — never a directory basename or a branch name. A receipt whose `head` no longer
-matches the work item's head is **stale by definition**, and a consumer must re-fetch rather than act on it.
+It maps any non-completed check to `pending`. The completed conclusion union is
+`success | failure | neutral | cancelled | timed_out | skipped`; any other conclusion also becomes `pending`. A missing
+`run_attempt` becomes `1`, while a failed or malformed response becomes an empty checks array.
 
-## Tracking tiers
+`resolveBaseRef()` tries these refs in order:
 
-A signal is delivered only at the finest tier that claims it, so nothing arrives twice. The tier is resolved from
-`bindings.json` by `src/hooks/inject.ts trackedRepos()`, and ambient is the default for any event in a tracked
-repository that is neither the bound nor a followed item.
+1. `origin/HEAD`
+1. `origin/main`
+1. `origin/master`
 
-- **Bound** — the work item this worktree owns. `src/hooks/stop.ts` renders the receipt and
-  `src/github.ts upsertReceiptComment()` writes it to the item's comment. `src/hooks/inject.ts receiptFor()` fetches it
-  back and `line()` injects a short summary
-- **Followed** — work items this session declared a dependency on. `receiptFor()` fetches the receipt comment,
-  `parseReceipt()` extracts the `Receipt`, and `line()` renders the contract delta, head SHA, blockers and a checks
-  summary. With no receipt found it falls back to headline and URL
-- **Ambient** — repository-wide activity. `src/github.ts fetchSince()` lists issues and PRs updated since the cursor,
-  and `src/hooks/inject.ts` stores only `headline` and `url`, never the body. Raw commits are not an ambient signal
+If all three merge-base calls fail, receipt emission falls through the top-level catch and exits without publishing.
 
-**Delivery is per recipient.** `ingest()` queues one copy of an event per worktree, under `.dkm/pending/<recipient>/`,
-where the recipient key is the first 16 hex characters of the SHA-256 of the worktree path. The tier is resolved
-separately for each recipient by `tierFor()`, so the worktree that owns an item is told `bound` and one that follows it
-is told `followed`. `drainAndRender()` reads only its own directory.
+### Receipt rendering and parsing
 
-A single shared queue could represent only one of those answers, and whichever session drained first consumed the event
-for everyone.
+`renderReceipt()` starts with `<!-- dkm:receipt v1 -->` and ends with `<!-- /dkm:receipt -->`. Between the markers it
+renders:
 
-## The decision engine
+1. An H1 naming the work-item number.
+1. A table containing `base`, `head` and `observed_at`.
+1. An unlabeled list of changed paths.
+1. A check table containing name, run ID, attempt and conclusion.
+1. An unlabeled list of contract paths.
+1. One decision-count line.
+1. A block-quoted `Unverified agent narrative` section.
+1. The full `Receipt` object in a fenced `json` block.
 
-`PermissionRequest` fires exactly when the harness would otherwise interrupt the human. DKM answers it from
-`.dkm/policy.toml`, which the installer wrote and committed.
+`blockers` appears in the fenced object, not as a separate human-readable section. The fence length is longer than any
+backtick run inside the JSON, with a minimum of three backticks.
 
-### Policy file schema
+`parseReceipt()` requires both outer markers, then scans from the top for the **first** line matching a three-or-more
+backtick fence followed by `json`. It parses through a closing fence of the same length and validates every required
+`Receipt` field. The guard does not reject extra object keys.
 
-`src/policy.ts` parses `.dkm/policy.toml` line by line. It does not use a TOML library. The parser recognises quoted
-strings, inline comments (`#` outside quotes) and array literals. The supported fields are:
+### Receipt emission
 
-- `version` — integer; currently `1`. Stored but not used to gate behaviour.
-- `contractGlobs` — array of path globs. Passed to `src/git.ts contractDelta()` to compute the receipt's
-  `contract_delta`.
-- `[[allow]]` — repeated table. Each rule has:
-  - `tool` — the tool name from the payload, e.g. `Bash` or `Edit`.
-  - `match` — optional substring that must appear in the command, `file_path`, `path` or `url` field.
-  - `paths` — optional array of path globs. Each candidate path is resolved against `cwd` and matched relatively to the
-    worktree root.
+`Stop` constructs the receipt fields listed in [Receipt contract](#receipt-contract), then looks up prior state in
+`lastEmit.emitted[binding.bound.itemNodeId]`.
 
-If `rtk` is present, the `match` string is compared against the rewritten command, so `match` rules should be
-substring-safe.
+With no prior state, the first bound `Stop` publishes a baseline. Later, `unchanged()` suppresses publication when all
+three values match:
 
-### Evaluation order
+- `head`
+- sorted `blockers`
+- `checksFingerprint`, formed from sorted `checkRunId:attempt:conclusion` strings
 
-First match wins; the default is always `ask`.
+These fields do not independently trigger an emit:
 
-1. **Blast-radius deny rules.** Mechanically checkable, no judgement
-1. **Explicit policy allow rules.** Paths, tools and commands the installer granted in advance
-1. **Default `ask`.** Anything unmatched reaches the human, exactly as today
+- `base`
+- `changedPaths`
+- `contractDelta`
+- `decisions`
+- `narrative`
+- `observedAt`
 
-**The blast-radius table is the safety property**, and it is deliberately mechanical rather than a model's assessment of
-importance. Agents are systematically poor at self-assessing risk; a rule table cannot talk itself into optimism.
+`receiptFingerprint()` uses the same three semantic inputs as the emit check, but `Stop` calls its own `unchanged()`
+helper rather than that exported function.
 
-| Trip                                                               | Result  |
-| ------------------------------------------------------------------ | ------- |
-| Deletes data, drops a column, or writes a migration                | `ask`   |
-| Egress: posts, publishes, deploys, sends, or opens a network write | `ask`   |
-| Spends money                                                       | `ask`   |
-| Touches a lockfile, an exported API surface, or `.env`             | `ask`   |
-| Touches anything under `.dkm/`, the grant itself                   | `ask`   |
-| Writes outside the session's own worktree                          | `deny`  |
-| Matches an explicit policy allow rule and trips nothing above      | `allow` |
+`summariseDecisions()` starts at the previous state's global `decisionOffset`, then counts only records whose `session`
+matches the current `session_id`. The new offset is the total log length before publication. The result therefore covers
+matching-session records appended since this work item's prior successful emit, not the session's lifetime.
 
-`src/decide.ts` evaluates the trips in this order: `outside-worktree`, `data-loss`, `money`, `egress`, `surface`. The
-table above groups them by result, but `outside-worktree` is checked first because it is the only `deny` rule and must
-prevent an allow rule from authorizing an escape. The implementation details are:
+`upsertReceiptComment()` first lists `repos/{owner}/{repo}/issues/<number>/comments` and selects the first body
+beginning with the receipt marker. It PATCHes `repos/{owner}/{repo}/issues/comments/<id>` when found or POSTs to the
+issue comments endpoint otherwise. GitHub's returned comment ID is stored; the body is not fetched again for readback.
 
-- `outside-worktree`: every string and path candidate in `tool_input` is resolved against `cwd` and checked against the
-  worktree root. Any candidate outside the worktree produces `deny`.
-- `data-loss`: matches `rm -rf` style commands, destructive SQL (`drop table`, `drop column`, `truncate`, `delete from`)
-  or a path containing `migrations` or `drizzle`.
-- `money`: matches `npm publish`, `bun publish`, `vercel deploy` or `gh release create`.
-- `egress`: matches `curl`, `wget`, `git push`, `bun/npm run deploy`, `gh pr/issue create/comment`,
-  `gh api ... -X POST/PATCH/PUT/DELETE` or any command containing `deploy` except `vercel deploy`.
-- `surface`: matches any candidate whose basename is in `bun.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`,
-  `package.json`, `.env` or `.env.*`, or any path under `.dkm/`.
+Only after the upsert succeeds does `Stop` update `last-emit.json` and clear the session report. A thrown measurement or
+GitHub error is swallowed by the top-level catch, leaving the previous state and report available for another attempt.
 
-An explicit allow rule matches only when all of the following hold:
+## Tracking and ingest
 
-- `tool` equals the payload's `tool_name`.
-- `match`, if present, is a substring of the command/file/path/url.
-- `paths`, if present, matches at least one candidate path relative to the worktree root.
+`Binding` contains `worktreePath`, one optional bound `WorkItemRef`, an array of followed items and an `ambient`
+boolean. The CLI creates a binding with `ambient: true`; there is no CLI command to toggle it.
 
-The glob engine is the same one used for `contract_delta`. The first matching `[[allow]]` wins and produces `allow`, but
-only if no blast-radius trip matched first.
+For each recipient, `tierFor()` compares an event's item node ID with the bound item first and followed items second. If
+neither claims it, `ingest()` queues it as ambient only when that recipient's `ambient` flag is true. The same event may
+therefore be bound for one worktree, followed for another and ambient for a third without duplicating a tier inside one
+recipient queue.
 
-**Every autonomous decision appends to `.dkm/decisions.jsonl`** before the decision is returned, never after:
+Bound and followed events are not rendered at different depths. When a receipt is available, both use `line()` to render
+the same receipt summary. The tier heading is their only presentation difference.
+
+`fetchSince()` invokes:
+
+```text
+gh api repos/{owner}/{repo}/issues?since=<encoded-ISO>&state=all&sort=updated&per_page=30
+```
+
+The endpoint returns issues and PRs updated since the cursor. `fetchSince()` does not implement @mention detection,
+base-branch CI events or a raw commit feed. It invokes the endpoint without a `--jq` projection, so response bodies may
+be present in `gh` stdout and the parsed response. It narrows the result before ingest builds a `PendingEvent`:
+
+```ts
+type AmbientEvent = {
+  kind: 'issue' | 'pr'
+  nodeId: string
+  number: number
+  headline: string
+  url: string
+  updatedAt: string
+}
+```
+
+`trackedRepoIds()` derives repository node IDs from bound and followed items. The ID keys the cursor, but
+`fetchSince(root, since)` addresses the repository selected by the current checkout through `{owner}/{repo}`; it does
+not use the node ID in the REST path.
+
+With no cursor, ingest queries from 24 hours before `Date.now()`. `UserPromptSubmit` skips a repository whose cursor is
+less than 120,000ms old. After `fetchSince()` returns, ingest stores `new Date().toISOString()` as the cursor.
+
+`fetchSince()` returns an empty array for both a successful empty response and a failed or malformed response. Because
+`ingest()` cannot distinguish those cases, it advances the cursor after either one. There is no acknowledgement or
+replay window around that update.
+
+`ingest(root, minIntervalMs, budgetMs, now)` defaults `budgetMs` to 8,000. It checks elapsed wall time before each issue
+query and before each receipt lookup. Once over budget, it stops later repository queries and queues remaining events
+without receipts, leaving them to render as headlines.
+
+One ingest memoizes each receipt by `itemNodeId`, so several recipients of the same item share one comment lookup. The
+budget cannot interrupt a synchronous `gh` call already in progress.
+
+`recipientKey()` is the first 16 hexadecimal characters of SHA-256 over the worktree path. A pending path is
+`.dkm/pending/<recipient>/<eventId>.json`; `writePending()` rejects event IDs containing `/` or `..` and recipient keys
+outside the expected hexadecimal shape.
+
+For fetched GitHub items, `eventId` and `rootId` are both the item node ID and `hops` is `0`. A later undrained update
+to the same item overwrites the same file. `rootId` and `hops` are shape-checked but never read for control flow: no hop
+budget, increment or relay rejection is implemented.
+
+`drainPending()` deletes each valid event before `render()` writes stdout. There is no delivery acknowledgement from the
+harness or model, so a write or consumption failure after deletion cannot be distinguished from successful use.
+
+## Policy and decision engine
+
+`loadPolicy(root)` reads `join(dkmPath(root), 'policy.toml')`. A linked worktree therefore uses the main worktree's
+policy rather than a policy from its own branch. A missing or unreadable file returns an empty version-1 policy.
+
+### Policy parser
+
+`src/policy.ts` is a line parser, not a general TOML parser. It supports:
+
+- `#` comments outside single or double quotes
+- single-quoted and double-quoted strings
+- one-line string arrays separated by commas outside quotes
+- repeated `[[allow]]` tables
+- the top-level `contractGlobs` key
+
+The committed file contains `version = 1`, but the parser does not read the key. It initializes every returned policy
+with `version: 1`. Unknown scalar keys are ignored. A single-bracket table clears the active allow rule; an unknown
+double-bracket table creates no rule but does not clear the active one.
+
+Each `[[allow]]` rule has the `PolicyAllowRule` shape from `src/types.ts`. A new table begins as `{ tool: '' }`; the
+parser does not reject an incomplete rule. `contractGlobs` feeds `src/git.ts contractDelta()` and has no effect on
+permission matching.
+
+### Blast-radius evaluation
+
+`decide()` evaluates trips in this exact order before it considers an allow rule:
+
+| Trip               | Decision | Predicate in `src/decide.ts`                                                                                         |
+| ------------------ | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `outside-worktree` | `deny`   | Any recursively found string or whitespace token resolves outside `worktreePath`                                     |
+| `data-loss`        | `ask`    | Recursive forced `rm`, destructive SQL substring, or a resolved path segment equal to `migrations` or `drizzle`      |
+| `money`            | `ask`    | `npm publish`, `bun publish`, `vercel deploy` or `gh release create`                                                 |
+| `egress`           | `ask`    | `curl`, `wget`, `git push`, selected deploy commands, selected `gh` creates/comments or `gh api ... -X <write verb>` |
+| `surface`          | `ask`    | A supported lockfile, `package.json`, `.env`, `.env.*` or any resolved path containing a `.dkm` segment              |
+
+The case-insensitive data-loss SQL substrings are:
+
+- `drop table`
+- `drop column`
+- `truncate`
+- `delete from`
+
+The `rm` matcher requires recursive and force flags before `--`, either separately or in one short option.
+
+The egress matcher recognizes:
+
+- `curl` or `wget`
+- `git push`
+- `bun run deploy` or `npm run deploy`
+- any other command containing the word `deploy`
+- `gh pr create` or `gh issue create`
+- `gh pr comment` or `gh issue comment`
+- `gh api` with `-X POST`, `PATCH`, `PUT` or `DELETE`
+
+`vercel deploy` is excluded from this matcher because the earlier `money` trip catches it.
+
+The surface filenames are:
+
+- `bun.lock`
+- `package-lock.json`
+- `yarn.lock`
+- `pnpm-lock.yaml`
+- `package.json`
+- `.env`
+
+The implementation does not inspect TypeScript exports or otherwise detect a general exported API surface.
+
+`collectPathCandidates()` recursively extracts every string from `tool_input`, then adds each whitespace-separated
+token. `outside-worktree`, data-loss path checks and surface checks all operate on that candidate set. This is
+intentionally an exact description: the engine does not distinguish a path field from an arbitrary string before
+resolving candidates.
+
+### Allow-rule evaluation
+
+After all blast-radius checks pass, allow rules are visited in file order. A rule matches only when:
+
+- `rule.tool` equals `tool_name`
+- `rule.match`, when present, is a literal substring of the first string-valued `command`, `file_path`, `path` or `url`
+- `rule.paths`, when present and non-empty, matches at least one in-worktree candidate path
+
+The path condition is **any-match**, not all-match. An input containing several in-worktree paths may be allowed when
+one matches the rule even if another does not. The earlier outside-worktree trip still denies when any candidate
+resolves outside the worktree.
+
+Permission path globs use `decide.ts globToRegex()`: `*` excludes `/`, `**` includes it and `?` matches one character.
+Contract globs use the separate segment matcher in `src/git.ts`; the two implementations are not the same function.
+
+The first matching allow rule returns `allow` with `rule: policy.allow[<zero-based-index>]`. With no match, `decide()`
+returns `ask`, `rule: default` and no blast trip.
+
+`src/decide.test.ts` asserts that `decide.ts` imports neither the store nor GitHub or hook modules and contains no file,
+network or child-process read. The permission result is therefore a function of `DecisionInput` and `Policy`; pending
+events cannot become grants through this engine.
+
+### Decision records
+
+On the normal handler path, each result becomes:
 
 ```json
 {
-  "ts": "2026-09-03T15:04:05Z",
+  "ts": "2026-09-03T15:04:05.000Z",
   "session": "abc123",
   "tool": "Bash",
   "summary": "bun test",
   "decision": "allow",
-  "rule": "policy.allow.commands[3]",
-  "reverse": "n/a, read-only"
+  "rule": "policy.allow[3]",
+  "reverse": "n/a"
 }
 ```
 
-A decision with no log entry is a bug, and the test suite fails on it. The count and summary surface in the receipt's
-`decisions` field, so the human's audit is reading a handful of lines rather than re-litigating the work.
+`summary` is the first string-valued `command`, `file_path`, `path` or `url`, truncated to 200 characters; otherwise it
+is the tool name. `reverse` is `blocked on <trip>` for a blast-radius result and `n/a` for an allow or default ask. It
+is not currently a reversal instruction.
 
-The record type is `DecisionRecord`: `ts`, `session`, `tool`, `summary`, `decision`, `rule`, `reverse`. `src/store.ts`
-`appendDecision()` writes one JSON line per decision; `src/cli.ts status` prints the last five. The code produces rule
-strings such as `blast:${trip}` or `policy.allow[${i}]`; the example above shows the intended shape.
+`appendDecision()` writes one JSON line before `emit()`. `status()` reports the total valid-record count and renders the
+last five records across all sessions. Invalid JSONL lines are skipped by `readDecisions()`.
 
-**There is no path from an inbound message to a decision.** The engine reads `policy.toml`, the tool payload and the
-repository. It never reads `.dkm/pending/`. `NFR-AUTH` asserts this by test.
+## Usage-limit supervisor
 
-## Surviving a usage limit
+From the plugin clone, the CLI entrypoint is:
 
-A long autonomous run ends when the account's usage limit is reached, and everything after that point is simply not
-done. `dkm revive "<prompt>"` makes the limit a pause instead of an ending.
+```bash
+bun src/cli.ts revive "<prompt>" -- <claude arguments>
+```
 
-**It waits; it never evades.** The delay is the reset the server itself reported. There is no retry that runs sooner
-than that, and no path that changes credentials or account.
+`src/cli.ts` passes `maxAttempts: 24`. `src/revive-run.ts buildArgv()` builds the first invocation as:
 
-**This is the one part of DKM that is not a hook.** `NFR-NODAEMON` governs ingest and emit, which still run only when
-the harness fires a hook. The supervisor is a foreground process the human starts instead of starting `claude`, and it
-lives for as long as the run does. Nothing schedules it, nothing runs in the background when it is not running, and
-using it is opt-in.
+```text
+claude --output-format json <claude arguments> -p <prompt>
+```
 
-### Detecting the limit
+Once a session ID is known, later invocations become:
 
-The contract is `claude --output-format json`. A limit is recognised when any of these hold, because a limit mistaken
-for a crash ends the very loop this exists to protect:
+```text
+claude --output-format json <claude arguments> --resume <session-id> -p Continue where you left off.
+```
 
-- `api_error_status` is `429`
-- `subtype`, `terminal_reason`, `stop_reason`, `result` or `error` contains `limit_reached`, `quota_exceeded`,
-  `rate_limit`, `usage_limit` or `usage limit reached`
-- the output could not be parsed as JSON at all, but the raw text carries one of those markers
+### Run classification
 
-`is_error` with none of the above is a genuine failure and stops the supervisor rather than being retried forever.
+`classify()` parses stdout when stdout is non-empty; otherwise `runSupervised()` passes stderr. The child process status
+is collected but not consulted when classifying the run.
 
-### Waiting and resuming
+A result is a limit when numeric `api_error_status` equals `429`, or when one of these fields contains a marker:
 
-| Input                                              | Wait                                      |
-| -------------------------------------------------- | ----------------------------------------- |
-| A reset time between 1 minute and 6 hours away     | Until that time, plus a 30-second cushion |
-| A reset time further away than 6 hours             | 6 hours, then re-check                    |
-| A reset time already in the past, or none readable | `60s × 2^(attempt-1)`, capped at 6 hours  |
+- `subtype`
+- `terminal_reason`
+- `stop_reason`
+- `result`
+- `error`
 
-The reset time is read from an explicit `resetsAt` or `resetAt` field when present, otherwise from the phrase following
-`reset` in the message. Epoch seconds, epoch milliseconds, an ISO timestamp and a bare clock time are all accepted; a
-clock time that has already passed today rolls to tomorrow. A parsed time is trusted only inside that window, because a
-misparse into the far future stalls the run until someone notices and one into the past spins against a live limit.
+The case-insensitive limit markers are:
 
-The first attempt starts a session from the prompt. **Every later attempt resumes the same session by id**, so the work
-continues where the limit interrupted it. A limit that reports no session id stops the supervisor: restarting from the
-prompt would repeat work already paid for and could repeat side effects.
+- `limit_reached`
+- `quota_exceeded`
+- `rate_limit`
+- `usage_limit`
+- `usage limit reached`
 
-Every pause appends to `.dkm/revivals.jsonl`, which is kept separate from `decisions.jsonl` so operational history does
-not dilute the permission audit a human reads.
+Unparseable output is also searched for those markers. Without one, unparseable output is a failure.
 
-### What the hook contributes
+A parsed object with `is_error: true` and no limit marker is a failure. Other parsed objects are treated as done, with
+`result` reduced to a string or an empty string.
 
-`SessionEnd` writes `.dkm/last-session.json` with the session id, the cwd and the reason the harness gave, recorded
-unexamined. A hook cannot tell a usage limit from a clean exit, and a hook that guessed would resume sessions nobody
-wanted resumed.
+Only string-valued `resetsAt` and `resetAt` fields are read explicitly. Otherwise `resetSource()` uses
+`/reset[s]?\s*(?:at|in)?[^.\n]{0,60}/i` against the combined signal fields.
 
-## Loops and dedup keys
+`parseResetAt()` accepts an all-digit epoch string of 9–13 digits, an ISO-like timestamp, or a bare local clock time.
+Epochs of at most 10 digits are seconds; longer epochs are milliseconds. A bare clock at or before the current local
+time rolls to the next day.
 
-Assume at-least-once delivery. Assign `event_id` before any transport touches an event. **Never deduplicate on message
-text** — identical prose can represent two distinct states.
+### Wait calculation
 
-| Loop       | Trigger and path                                         | Terminates when                   | Dedup key                                         |
-| ---------- | -------------------------------------------------------- | --------------------------------- | ------------------------------------------------- |
-| **Bind**   | `/dkm-bind <number>`, resolve, record                    | Binding is on disk                | repo node ID + worktree path                      |
-| **Emit**   | `Stop`, compute delta, upsert comment                    | GitHub confirms and it reads back | repo + work item + session incarnation + head SHA |
-| **Ingest** | `SessionStart` or `UserPromptSubmit`, fetch since cursor | The cursor has advanced           | comment ID + `updated_at`                         |
-| **Inject** | Drain this worktree's queue, write to stdout             | The session has consumed it       | event ID + recipient worktree                     |
-| **Decide** | `PermissionRequest`, evaluate policy, log, return        | A decision is returned            | session + tool-use ID                             |
+| Input                                                         | `waitFor()` result                       |
+| ------------------------------------------------------------- | ---------------------------------------- |
+| Parsed reset plus 30 seconds is 1 minute through 6 hours away | Exact delta plus the 30-second cushion   |
+| Parsed reset plus cushion is more than 6 hours away           | 6 hours                                  |
+| Parsed reset is too near, in the past or absent               | `60s × 2^(attempt-1)`, capped at 6 hours |
 
-The implementation of each loop:
+The constants are `MIN_WAIT_MS = 60_000` and `MAX_WAIT_MS = 21_600_000`. The default sleep uses `Atomics.wait()` in the
+foreground process.
 
-- **Bind.** `src/cli.ts` handles `bind`. It calls `src/github.ts workItemByNumber()` to resolve the repo and item node
-  IDs, then writes a `Binding` record to `.dkm/bindings.json`. The dedup key is the `repoNodeId` plus the worktree path.
-- **Emit.** `src/hooks/stop.ts` measures the repository, `src/receipt.ts` renders the receipt and
-  `src/github.ts upsertReceiptComment()` PATCHes an existing comment or POSTs a new one. The result is stored in
-  `.dkm/last-emit.json` keyed by the work item's `itemNodeId`. The `unchanged()` check compares `head`, sorted
-  `blockers` and a `checksFingerprint` (sorted `checkRunId:attempt:conclusion` strings joined by `|`). If all three
-  match the last emit, no write happens.
-- **Ingest.** `src/hooks/session-start.ts` and `src/hooks/user-prompt-submit.ts` call `src/hooks/inject.ts ingest()`.
-  The function fetches repository events since the timestamp in `.dkm/cursor.json` and writes one
-  `.dkm/pending/<eventId>.json` per event. `UserPromptSubmit` is throttled to once every 120,000ms so every prompt does
-  not place a network call on the hot path. The cursor is advanced to the current time after a successful fetch.
-- **Inject.** `src/hooks/inject.ts drainAndRender()` reads every `.dkm/pending/*.json` file, deletes it and writes the
-  rendered text to stdout. The `PendingEvent` carries `eventId`, `rootId` and `hops`, but **nothing reads `hops` or
-  `rootId` yet**: `ingest()` writes `hops: 0` and no code path increments or rejects on it. The fields reserve the
-  shape; the hop budget is not enforced.
-- **Decide.** `src/hooks/permission-request.ts` loads the policy, calls `src/decide.ts`, appends the log and emits the
-  payload. The dedup key is effectively the `session_id` plus the tool-use being decided; the test suite confirms the
-  log entry matches the returned decision.
+### Resume loop
 
-**The emit condition is the entire anti-noise design.** A receipt is written only when head SHA, blocker set or check
-state changed. `Stop` means "the agent finished a response", never "the work is done"; emitting on every `Stop` would
-publish noise on a loop.
+`runSupervised()` appends a `waiting` record before every sleep. It appends a terminal record for completion, failure or
+an unresumable limit. If a limit result has no session ID, it records `unresumable` and stops rather than replaying the
+prompt.
 
-**The network budget.** `ingest(root, minIntervalMs, budgetMs)` measures its own wall clock. Past the budget it stops
-fetching and the remaining events arrive as headlines, because a late delta is worth more than a hook the harness kills.
-The receipt of one work item is fetched once per ingest however many worktrees receive it; without that, per-recipient
-queueing would multiply one ~1s call by the number of worktrees.
+The final allowed attempt does not sleep. If it also returns a limit, the function returns that limit after
+`maxAttempts`; it does not append a separate terminal revival record for exhaustion.
 
-**There is no background poller.** Ingest is a cursored pull on the injection hooks. This keeps the no-daemon property
-honest: nothing runs between firings, so nothing can die silently and leave a stale inbox looking healthy. The cost is
-that a session learns of a receipt when it next starts or next receives a prompt — **live mid-turn delivery is v2**, and
-needs a supervised lifecycle v1 deliberately does not have.
+## Identity and replay boundaries
 
-## Failure modes
+The implementation uses these concrete keys:
 
-- **Receipt storm** — Emit only on a real state delta. One mutable comment per work item, edited in place
-- **Agent feedback loop** — Every event carries a root ID and a hop budget field. **The budget is not yet enforced**,
-  and DKM does not currently relay events between sessions, so nothing republishes today
-- **Speculation becomes fact** — Typed kinds. Only `measured` may be acted on; `narrative` is display-only
-- **Stale context** — Every claim carries its SHA. The consumer re-fetches when head has moved
-- **Consent laundering** — The engine never reads inbound state. Asserted by `NFR-AUTH`
-- **Runaway autonomy** — Default `ask`, deny rules evaluated first, and every call logged before it returns
-- **Duplicate or out-of-order events** — Dedup on resource version. Acknowledge only after persistence
-- **Wrong repository or recipient** — Bind on node IDs only
-- **Secret leakage** — Fixed allowlisted schema. Raw transcripts and tool output are never published
-- **Hook timeout** — Every handler fails open and exits 0. A broken hook must never wedge a session
-- **Fail-open that is really fail-closed** — A malformed decision is read as a hook failure and denies the tool.
-  `PermissionRequest` must emit `{}`, never a best-effort decision, when it cannot answer
+| Operation | Persistent key or filename                        | Current replay behavior                                             |
+| --------- | ------------------------------------------------- | ------------------------------------------------------------------- |
+| Bind      | Exact `worktreePath` plus resolved `WorkItemRef`  | A later bind replaces that worktree's bound item                    |
+| Emit      | `lastEmit.emitted[itemNodeId]`                    | Same head, blocker set and check fingerprint suppress a later write |
+| Comment   | First issue comment whose body starts with marker | PATCH that comment; otherwise POST a new one                        |
+| Ingest    | `cursors[repoNodeId]`                             | Query from timestamp, then replace it with current time             |
+| Queue     | `<recipientKey>/<itemNodeId>.json`                | An undrained update for the same item overwrites the file           |
+| Drain     | Valid pending filename                            | Delete before rendered stdout is written                            |
+| Decide    | No dedup key                                      | Every normal handler firing appends another record                  |
 
-## Testing
+`eventId` is assigned with `crypto.randomUUID()` for receipts and with the GitHub item node ID for fetched events. The
+implementation has none of these mechanisms:
 
-- **Emit matrix** — no delta produces no receipt; head, blockers and checks each produce exactly one
-- **Idempotency** — the same state emitted twice edits one comment, never creates a second
-- **Staleness** — a receipt whose head moved is rejected by the consumer
-- **Decision table** — every row of the blast-radius table, plus the `ask` default
-- **Wire contract** — the exact bytes each hook writes, asserted against the harness's schema rather than ours
-- **Consent boundary** — a test asserts no reachable path from `.dkm/pending/` into the decision engine
-- **Log completeness** — every decision returned has a matching `decisions.jsonl` entry
-- **Fixture repository** — golden receipts diffed against recorded `git` and `gh` fixtures
+- a session-incarnation key
+- a comment `updated_at` key
+- tool-use ID deduplication
+- a delivery acknowledgement protocol
 
-## Open spikes
+## Known implementation limits
 
-Each blocks the part it names, and nothing else.
+- **Initial baseline write.** The first bound `Stop` publishes even when no worktree state changed during that turn.
+- **Incomplete stale detection.** Receipts carry an observed head, but ingest does not fetch the current PR head or
+  reject a stale receipt.
+- **Narrow ambient source.** The only ambient source is the updated issues endpoint; @mentions and base-branch CI
+  failures are not implemented.
+- **Response bodies cross the process boundary.** The issues request does not project fields at the `gh` boundary.
+  Bodies are discarded before `AmbientEvent`, but may be present transiently in command output and parsed JSON.
+- **Cursor advances after a failed read.** `fetchSince()` collapses failure and an empty response to `[]`, so ingest can
+  move the cursor past an interval it did not receive.
+- **No delivery acknowledgement.** Drain deletes a valid event before stdout is accepted or model use is known.
+- **No hop enforcement.** `rootId` and `hops` are written and shape-checked but never read. DKM also has no current
+  relay path, so pending events are not republished by the existing code.
+- **Bound and followed depth is identical.** Both tiers render the same receipt-derived line.
+- **Report storage differs from other state.** Reports are worktree-local; the other state paths use the shared store.
+- **A report alone may wait.** Narrative and decision changes do not trigger an emit; they appear only when a baseline,
+  head, blocker or check change causes publication.
+- **GitHub read failures are ambiguous.** A failed check fetch looks like zero checks, while failed ambient fetch looks
+  like no events.
+- **Hook timing is not guaranteed by child timeouts.** A `Stop` can issue three sequential `gh` calls with 10-second
+  child timeouts inside a 20-second hook timeout, and `src/git.ts` sets no timeout.
+- **Allow paths use any-match.** One matching in-worktree path can satisfy a rule containing several candidate paths.
+- **Unknown repeated policy tables retain state.** A non-`allow` double-bracket table does not clear `currentRule`, so
+  recognized keys after it can still modify the preceding allow rule.
+- **Resume ticket is unused.** `SessionEnd` writes `.dkm/last-session.json`, but the supervisor never reads it.
+- **Detached-head handling is unused.** `isDetachedHead()` exists and has unit coverage, but no hook or CLI caller uses
+  it to alter behavior.
 
-1. ~~**Does `Stop` exit 2 hand the model a usable reason to continue?**~~ **Answered: yes, and exit 2 is not needed.**
-   `hookSpecificOutput.additionalContext` on `Stop` reaches the model verbatim and the turn continues. P2b is reachable
-1. ~~**Can a hook resolve head SHA and work-item binding inside a worktree**~~ **Answered: yes.** Verified in a live
-   session in a linked worktree; state resolves through `--git-common-dir`, so every worktree shares one `.dkm/`. The
-   detached-head case is still unexercised
-1. ~~**Does a cursored `gh` fetch fit inside the injection hooks' timeout**~~ **Answered: yes, with a budget.** Measured
-   against a live repository, a cursored issue fetch of 30 items takes 0.78–1.27s and a single comment fetch 0.42–1.01s,
-   against a 15s hook timeout. One fetch is comfortable; the risk is their number. Ingest therefore memoises a receipt
-   across recipients and stops fetching once it has spent `budgetMs`, defaulting to 8s, after which events arrive as
-   headlines. Draining what is already pending is a local read and always happens
+## Test coverage
+
+The repository's test sources currently cover:
+
+| Test source                | Verified behavior                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------ |
+| `src/decide.test.ts`       | Outside, data-loss, egress and surface trips; allow rules; default ask; static consent boundary  |
+| `src/git.test.ts`          | Head/base resolution, detached-head detection, changed-path parsing and contract-glob behavior   |
+| `src/github.test.ts`       | Exact GitHub argv, response narrowing, receipt upsert and work-item resolution                   |
+| `src/receipt.test.ts`      | Receipt round-trip, invalid/truncated input and head/blocker/check fingerprint inputs            |
+| `src/store.test.ts`        | Defaults, corrupt input, atomic JSON writes, pending drain and JSONL filtering                   |
+| `src/hooks/inject.test.ts` | Receipt memoization and wall-clock budget branches                                               |
+| `src/revive*.test.ts`      | Classification, reset parsing, wait calculation, resume argv, terminal paths and revival logging |
+| `test/cli.test.ts`         | Explicit bind/follow, report commands, status and invalid input                                  |
+| `test/e2e.test.ts`         | Hook output, logging, baseline/idempotency, per-recipient delivery and fail-open paths           |
+| `test/plugin.test.ts`      | Manifest inventory, handler paths, command roots, version alignment and licence                  |
+| `test/worktree.test.ts`    | Shared bindings and policy resolution across a linked worktree                                   |
+
+The source does **not** currently contain:
+
+- a consumer stale-head rejection test
+- a money-trip unit test
+- a 5,000-commit timing test
+- a test proving every narrative-only update emits
+
+The last behavior is intentionally false under the current emit predicate.
+
+## Recorded measurements
+
+The `0.3.0` entry in [`CHANGELOG.md`](../CHANGELOG.md) preserves the live measurements attached to issue #4: a cursored
+issue fetch of 30 items took 0.78–1.27s and one comment fetch took 0.42–1.01s against a 15s injection-hook timeout.
+
+The current source responds with an 8,000ms ingest budget and per-ingest receipt memoization. The repository does not
+contain a benchmark that reproduces those timings.

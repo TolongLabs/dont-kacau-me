@@ -14,8 +14,8 @@ Contents:
 
 - **US-1.** As a developer with several worktrees, I bind each session to a work item once, and never hand-summarise its
   progress again.
-- **US-2.** As a developer whose agent depends on someone else's work, I receive their contract changes in my agent's
-  context, bound to the commit they were observed at, without asking anyone.
+- **US-2.** As a developer whose agent depends on someone else's work, I receive contract changes and their observed
+  commit when receipt enrichment completes within the ingest budget.
 - **US-3.** As a developer, my agents stop asking me questions my own policy already answers, and I can read every call
   they made in one place afterwards.
 - **US-4.** As a teammate, I see one comment per work item that tells me what actually changed, with the agent's
@@ -23,37 +23,41 @@ Contents:
 
 ## Functional requirements
 
-| ID             | Requirement                                                                                                         | Acceptance                                                                           |
-| -------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **FR-BIND**    | A session binds to a work item, explicitly or by resolving its branch to an open PR                                 | Binding survives a restart; a wrong basename or branch name never resolves a binding |
-| **FR-EMIT**    | On `Stop`, if and only if head SHA, blocker set or check state changed, upsert the work item's receipt              | No delta produces no write; the same delta twice edits one comment                   |
-| **FR-TIER**    | Track at three tiers: bound, followed, ambient. Deliver at the finest tier that claims a signal                     | A signal claimed by `bound` never also arrives as `ambient`                          |
-| **FR-INGEST**  | On `SessionStart` and `UserPromptSubmit`, fetch since the persisted cursor and inject pending items into context    | Cursor advances; a replayed fetch injects nothing new                                |
-| **FR-DECIDE**  | On `PermissionRequest`, evaluate the installer's policy and return `allow`, `deny` or `ask`                         | Every branch of the rule table is exercised by a test                                |
-| **FR-LOG**     | Every autonomous decision appends a record naming the rule, the inputs, and how to reverse it                       | A decision with no matching log entry fails the test suite                           |
-| **FR-AMBIENT** | Ambient covers new issues, new PRs, @mentions and base-branch CI failures. Headline and URL only                    | Bodies are never fetched or stored; raw commits are not an ambient signal            |
-| **FR-REVIVE**  | A supervised run treats a usage limit as a pause: wait for the reset the server named, then resume the same session | A limit resumes by session id, never by replaying the prompt; a genuine error stops  |
+| ID             | Requirement                                                                                                           | Acceptance                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **FR-BIND**    | Bind the current worktree to an explicit GitHub issue or PR number                                                    | Resolve the item and repository node IDs before writing `bindings.json`                      |
+| **FR-EMIT**    | On the first bound `Stop`, publish a baseline; later, upsert only when head, blockers or check fingerprint changes    | Two consecutive stops with the same tracked state make one comment write                     |
+| **FR-TIER**    | Label each recipient's event as bound, followed or ambient, using the finest relationship that applies                | A bound item is not also queued as followed or ambient for the same worktree                 |
+| **FR-INGEST**  | On `SessionStart` and `UserPromptSubmit`, fetch updated issues and PRs, queue per recipient, then drain that worktree | A valid queued file is deleted on drain; an undrained update for the same item overwrites it |
+| **FR-DECIDE**  | On `PermissionRequest`, evaluate the policy and emit `allow`, `deny` or `{}` for the human path                       | Blast-radius checks precede ordered allow rules, and unmatched input produces `{}`           |
+| **FR-LOG**     | Before emitting, append the tool, input summary, decision and rule, plus the current `reverse` placeholder            | Successful evaluation writes one `DecisionRecord` before `emit()`                            |
+| **FR-AMBIENT** | Treat updated issues and PRs not claimed as bound or followed as ambient                                              | Narrow GitHub results to `AmbientEvent` before constructing `PendingEvent`                   |
+| **FR-REVIVE**  | Treat a recognised usage limit as a pause, then resume the reported session after the computed wait                   | Never replay the original prompt after a session ID exists; stop on a genuine error          |
 
-**Ambient excludes raw commits deliberately.** A commit reaches the user as a head SHA change on a bound or followed
-item, which is the only context where it is actionable.
+**Ambient excludes raw commits deliberately.** A publisher's receipt captures its current head SHA. Ingest has no
+repository-wide commit query.
 
 ## Non-functional requirements
 
-- **NFR-AUTH** — No code path exists from an inbound message to a permission decision. Enforced by a test, not by review
-- **NFR-NODAEMON** — No process runs between hook firings. Ingest is a cursored pull, never a background poller
-- **NFR-BUDGET** — Every hook completes within its timeout on a repository of at least 5,000 commits
-- **NFR-SCHEMA** — Published receipts carry a fixed allowlisted schema. Raw transcripts and tool output are never
-  published
-- **NFR-PROV** — Every published claim carries the SHA it was observed at. A consumer re-fetches when head has moved
-- **NFR-QUIET** — A session that changed nothing produces no network write and no output
-- **NFR-WAIT** — A usage limit is waited out, never evaded. No retry runs before the reset the server reported, and no
-  path changes credentials or account
+- **NFR-AUTH** — `decide()` remains a pure function of permission input and policy, with no store, GitHub or hook
+  imports
+- **NFR-NODAEMON** — Receipt, ingest and decision work runs only on hooks. The usage-limit supervisor is opt-in and
+  foreground
+- **NFR-BUDGET** — Hook declarations carry fixed timeouts, and ingest stops adding receipt fetches after its wall-clock
+  budget is spent
+- **NFR-SCHEMA** — DKM constructs receipts from the fields in `Receipt`; no hook reads a transcript or unrestricted tool
+  output for publication
+- **NFR-PROV** — Each receipt carries one base SHA, one head SHA and an observation timestamp. Ambient headlines do not
+  carry a SHA
+- **NFR-QUIET** — An unbound `Stop` and any bound `Stop` unchanged since its baseline produce no output or comment write
+- **NFR-WAIT** — The supervisor derives its wait from the reported reset when usable, caps one wait at six hours and
+  otherwise backs off exponentially. No path changes credentials or account
 
 ## Out of scope
 
 Each with the reason, so nobody relitigates it:
 
-- **Approving permissions on a peer's say-so** — the authority principle, and the harness blocks it regardless
+- **Approving permissions on a peer's say-so** — the authority principle; `decide()` has no inbound-state dependency
 - **Free-form agent chat** — cross-session messaging already does this, and prose carries no provenance
 - **Spawning or scheduling agents** — Agent Teams' job
 - **File locking and conflict resolution** — worktree isolation plus Agent Teams' file-locked claiming already cover it

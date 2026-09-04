@@ -43,21 +43,21 @@ without replacing coordination produces divergence, faster. That is why DKM ship
 
 ## Why this is possible now
 
-Claude Code exposes the exact seams this needs, verified against the installed binary:
+Claude Code exposes the lifecycle events DKM registers in `hooks/hooks.json`:
 
-- `PermissionRequest` fires **during** the permission flow and returns `allow`, `deny` or `ask` — the harness itself
-  offers a socket for deciding instead of interrupting
+- `PermissionRequest` lets the handler emit `allow` or `deny`; an empty object leaves the prompt to the human
 - `Stop` fires at a turn boundary, where a state delta can be measured
 - `SessionStart` and `UserPromptSubmit` inject their stdout into the model's context
-- `WorktreeCreate` and `WorktreeRemove` give session binding a native lifecycle
+- `SessionEnd` lets DKM record which session ended
 
-DKM is not fighting the harness. It fills sockets the harness already exposes.
+DKM binds a worktree explicitly through `/dont-kacau-me:dkm-bind`; it does not register the provider-style
+`WorktreeCreate` or `WorktreeRemove` events.
 
 ## The moment that sells it
 
-Agent A changes an API on PR #81 and stops. Agent B, working a declared dependent issue in another worktree — and
-possibly on another developer's machine — receives the contract delta **and the SHA it was observed at**, and adapts
-without either human copying, summarising or pasting anything. Both humans can audit the same GitHub comment.
+Agent A changes an API on PR #81 and stops. On a later ingest, agent B can receive the receipt's contract delta and
+**the SHA it was observed at** while working in another worktree, possibly on another developer's machine. Both humans
+can audit the same GitHub comment without copying, summarising or pasting the result.
 
 Meanwhile agent B hit four permission prompts along the way. The installer's policy cleared three of them and recorded
 why. The fourth touched a migration, so it waited.
@@ -71,8 +71,8 @@ The product has one hard boundary, and it is worth stating as a feature rather t
 > Auto-answering may **execute an existing decision**. It must never **manufacture intent or consent**.
 
 Installing DKM and writing its policy is the human grant that makes autonomy legitimate. A message from another session
-is not, and the harness agrees: peer messages are labelled as coming from another Claude session, and a relayed approval
-claim is treated as untrusted input.
+is not. `src/decide.ts` receives only the permission input and parsed policy; it imports neither the pending-event store
+nor the GitHub client.
 
 This is why DKM can be aggressive about deciding without being reckless. It is executing a policy its installer wrote,
 in that installer's own sessions, and it writes down every call it makes.

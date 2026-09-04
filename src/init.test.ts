@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { decide } from './decide'
-import { type Check, runInit, suggestPolicy } from './init'
+import { type Check, gitCheck, runInit, suggestPolicy } from './init'
 import { loadPolicy } from './policy'
 import type { DecisionInput } from './types'
 
@@ -86,4 +86,24 @@ test('init reports where the policy landed', () => {
   expect(existsSync(join(tmpDir, '.dkm', 'policy.toml'))).toBe(true)
   expect(result.output).toContain('policy.toml')
   expect(result.output).toContain('dkm-bind')
+})
+
+test('init points at a worktree, never a second session in the same directory', () => {
+  // Recipients are keyed on worktree path and draining unlinks the event, so two sessions in one
+  // directory share a queue and race for it. Telling a new user to open a second session there
+  // would be telling them to lose events.
+  const { output } = runInit(tmpDir, false, CHECKS)
+  expect(output).toContain('git worktree add')
+  expect(output).toContain('race')
+})
+
+test('a repository with no git is told to run git init', () => {
+  const bare = mkdtempSync(join(tmpdir(), 'dkm-nogit-'))
+  try {
+    const git = gitCheck(bare)
+    expect(git.ok).toBe(false)
+    expect(git.detail).toContain('git init')
+  } finally {
+    rmSync(bare, { recursive: true, force: true })
+  }
 })

@@ -49,77 +49,39 @@ export function preflight(root: string): Check[] {
   return checks
 }
 
-function scripts(root: string): Set<string> {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-    if (typeof parsed !== 'object' || parsed === null) return new Set()
-    const s = (parsed as Record<string, unknown>).scripts
-    if (typeof s !== 'object' || s === null) return new Set()
-    return new Set(Object.keys(s as Record<string, unknown>))
-  } catch {
-    return new Set()
-  }
-}
-
-function packageManager(root: string): string {
-  if (existsSync(join(root, 'bun.lock')) || existsSync(join(root, 'bun.lockb'))) return 'bun'
-  if (existsSync(join(root, 'pnpm-lock.yaml'))) return 'pnpm'
-  if (existsSync(join(root, 'yarn.lock'))) return 'yarn'
-  return 'npm'
-}
-
-const SOURCE_DIRS = ['src', 'lib', 'app', 'docs', 'test', 'tests']
+const SOURCE_DIRS = ['src', 'lib', 'app']
 
 /**
- * Generated from what the repository actually contains, because the step people abandon is writing
- * TOML for a schema they have just met. A grant for a directory that does not exist teaches nothing.
+ * The grant a vibecoder means when they reach for --dangerously-skip-permissions, minus the one
+ * thing that flag gives up for nothing: every decision is still logged with the rule that made it,
+ * and nothing is written outside this worktree. That last line is deliberately the only rule left
+ * on and deliberately one word from off, so the reader sees the choice rather than inheriting it.
  */
 export function suggestPolicy(root: string): string {
   const present = SOURCE_DIRS.filter((d) => existsSync(join(root, d)))
-  const writable = present.length > 0 ? present : ['src']
-  const pm = packageManager(root)
-  const available = scripts(root)
-  const commands: string[] = []
-  if (available.has('test')) commands.push(`${pm} test`)
-  for (const name of ['lint', 'typecheck', 'build', 'format']) {
-    if (available.has(name)) commands.push(`${pm} run ${name}`)
-  }
+  const globs = present.flatMap((d) => [`${d}/**/types.ts`, `${d}/**/schema.ts`])
+  return `# Written by \`dkm init\`. This file is your grant: DKM executes the decisions recorded here on
+# your behalf, and never invents one. Every decision is logged in .dkm/decisions.jsonl with the
+# rule that made it.
 
-  const lines = [
-    '# Written by `dkm init`. This file is your grant: DKM may execute the decisions recorded',
-    '# here on your behalf, and may never invent one. Anything not listed falls through to `ask`,',
-    '# which is exactly the behaviour you have today.',
-    '#',
-    '# Blast-radius rules always run first and cannot be overridden from here. Deleting data,',
-    '# spending money, pushing, deploying, and writes to a lockfile, package.json, .env or .dkm/',
-    '# reach you no matter what you allow below.',
-    '',
-    'version = 1',
-    '',
-    '# Paths whose change is worth telling a dependent session about.',
-    `contractGlobs = ${JSON.stringify(present.includes('src') ? ['src/**/types.ts', 'src/**/schema.ts'] : [])}`,
-    '',
-    '# Looking at code changes nothing.',
-    '[[allow]]',
-    'tool = "Read"',
-    '',
-    '[[allow]]',
-    'tool = "Grep"',
-    '',
-    '[[allow]]',
-    'tool = "Glob"'
-  ]
+version = 1
 
-  for (const command of commands) {
-    lines.push('', '[[allow]]', 'tool = "Bash"', `match = "${command}"`)
-  }
+# Paths whose change is worth telling a dependent session about.
+contractGlobs = ${JSON.stringify(globs)}
 
-  const globs = writable.map((d) => `${d}/**`)
-  for (const tool of ['Write', 'Edit']) {
-    lines.push('', '[[allow]]', `tool = "${tool}"`, `paths = ${JSON.stringify(globs)}`)
-  }
+# Each rule that would otherwise stop the agent. "off" removes it. "ask" stops for you, and is
+# auto-denied when you are not there. "deny" blocks it outright.
+[blast]
+outside-worktree = "deny"   # the one rule left on: nothing is written outside this worktree
+data-loss = "off"           # rm -rf, destructive SQL, migrations
+egress = "off"              # git push, deploys, curl, gh writes
+money = "off"               # npm publish, vercel deploy, gh release
+surface = "off"             # package.json, lockfiles, .env, .dkm/
 
-  return `${lines.join('\n')}\n`
+# Everything else is yours to run.
+[[allow]]
+tool = "*"
+`
 }
 
 export type InitResult = { output: string; wrote: boolean }
@@ -146,14 +108,10 @@ export function runInit(root: string, force: boolean, checks: Check[] = prefligh
     `  ${'✓'} ${'policy'.padEnd(18)} ${wrote ? `written to ${target}` : `already at ${target}; --force to replace`}`
   )
 
-  lines.push('', 'Now automatic in this repository:')
+  lines.push('', 'In this repository:')
   for (const line of summarise(root, target)) lines.push(`  ${line}`)
 
   lines.push(
-    '',
-    'Still asks you, whatever the policy says:',
-    '  deleting data, spending money, pushing, deploying,',
-    '  and writes to a lockfile, package.json, .env or .dkm/',
     '',
     'Next:',
     `  1. Read ${target} and delete anything you did not mean to grant, then commit it.`,
@@ -181,28 +139,28 @@ export function runInit(root: string, force: boolean, checks: Check[] = prefligh
 
 function summarise(root: string, target: string): string[] {
   const text = existsSync(target) ? readFileSync(target, 'utf8') : suggestPolicy(root)
-  const tools: string[] = []
-  const commands: string[] = []
-  const paths: string[] = []
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    const tool = /^tool\s*=\s*"([^"]+)"/.exec(line)
-    if (tool?.[1] !== undefined) tools.push(tool[1])
-    const match = /^match\s*=\s*"([^"]+)"/.exec(line)
-    if (match?.[1] !== undefined) commands.push(match[1])
-    const p = /^paths\s*=\s*\[(.*)\]/.exec(line)
-    if (p?.[1] !== undefined) {
-      for (const piece of p[1].split(',')) {
-        const cleaned = piece.trim().replace(/^"|"$/g, '')
-        if (cleaned !== '') paths.push(cleaned)
-      }
-    }
+  const wildcard = /^\s*tool\s*=\s*"\*"/m.test(text)
+  const setting = (trip: string): string => {
+    const m = new RegExp(`^\\s*${trip}\\s*=\\s*"(deny|ask|off)"`, 'm').exec(text)
+    return m?.[1] ?? (trip === 'outside-worktree' ? 'deny' : 'ask')
   }
-  const readOnly = ['Read', 'Grep', 'Glob'].filter((t) => tools.includes(t))
+  const trips: Record<string, string> = {
+    'outside-worktree': 'writing outside this worktree',
+    'data-loss': 'rm -rf, destructive SQL, migrations',
+    egress: 'git push, deploys, curl, gh writes',
+    money: 'npm publish, vercel deploy, gh release',
+    surface: 'package.json, lockfiles, .env, .dkm/'
+  }
   const out: string[] = []
-  if (readOnly.length > 0) out.push(`${readOnly.join(', ')} — looking at code`)
-  if (commands.length > 0) out.push(`${[...new Set(commands)].join(', ')}`)
-  if (paths.length > 0) out.push(`writing under ${[...new Set(paths)].join(', ')}`)
-  if (out.length === 0) out.push('nothing yet; the policy grants no tools')
+  out.push(wildcard ? 'every tool, inside this worktree' : 'only the tools listed in the policy')
+  const asks = Object.entries(trips)
+    .filter(([t]) => setting(t) === 'ask')
+    .map(([, d]) => d)
+  const denies = Object.entries(trips)
+    .filter(([t]) => setting(t) === 'deny')
+    .map(([, d]) => d)
+  if (asks.length > 0) out.push(`still asks you (auto-denied when AFK): ${asks.join('; ')}`)
+  if (denies.length > 0) out.push(`blocked: ${denies.join('; ')}`)
+  if (asks.length === 0 && denies.length === 0) out.push('nothing is held back')
   return out
 }

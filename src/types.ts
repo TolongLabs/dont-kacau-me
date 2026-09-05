@@ -92,10 +92,13 @@ export type PolicyAllowRule = {
   paths?: string[]
 }
 
+export type BlastSetting = 'deny' | 'ask' | 'off'
+
 export type Policy = {
   version: 1
   allow: PolicyAllowRule[]
   contractGlobs: string[]
+  blast: Record<BlastRadiusTrip, BlastSetting>
 }
 
 export type BlastRadiusTrip = 'data-loss' | 'egress' | 'money' | 'surface' | 'outside-worktree'

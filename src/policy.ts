@@ -1,9 +1,28 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dkmPath } from './store'
-import type { Policy, PolicyAllowRule } from './types'
+import type { BlastRadiusTrip, BlastSetting, Policy, PolicyAllowRule } from './types'
 
-const DEFAULT_POLICY: Policy = { version: 1, allow: [], contractGlobs: [] }
+/**
+ * What each blast-radius rule does when the policy says nothing. `outside-worktree` denies and the
+ * rest ask, which is the behaviour before the `[blast]` table existed. The table can set any of them,
+ * including `outside-worktree`, to `off`; that is a grant the installer writes and commits, which is
+ * the only kind of grant DKM executes.
+ */
+export const DEFAULT_BLAST: Record<BlastRadiusTrip, BlastSetting> = {
+  'outside-worktree': 'deny',
+  'data-loss': 'ask',
+  egress: 'ask',
+  money: 'ask',
+  surface: 'ask'
+}
+
+const BLAST_TRIPS = new Set<string>(Object.keys(DEFAULT_BLAST))
+const BLAST_SETTINGS = new Set<string>(['deny', 'ask', 'off'])
+
+function emptyPolicy(): Policy {
+  return { version: 1, allow: [], contractGlobs: [], blast: { ...DEFAULT_BLAST } }
+}
 
 function stripInlineComment(line: string): string {
   let inSingle = false
@@ -69,13 +88,15 @@ export function loadPolicy(root: string): Policy {
     // worktree, so reading from it would govern each branch by its own checked-out policy. One
     // repository has one grant, and a session must not be able to widen its own by switching branch.
     const text = readFileSync(join(dkmPath(root), 'policy.toml'), 'utf8')
-    const policy: Policy = { version: 1, allow: [], contractGlobs: [] }
+    const policy = emptyPolicy()
     let currentRule: PolicyAllowRule | null = null
+    let inBlast = false
     for (const rawLine of text.split('\n')) {
       const line = stripInlineComment(rawLine).trim()
       if (line === '') continue
       if (line.startsWith('[[') && line.endsWith(']]')) {
         const table = line.slice(2, -2).trim()
+        inBlast = false
         if (table === 'allow') {
           currentRule = { tool: '' }
           policy.allow.push(currentRule)
@@ -84,13 +105,21 @@ export function loadPolicy(root: string): Policy {
       }
       if (line.startsWith('[')) {
         currentRule = null
+        inBlast = line.slice(1, -1).trim() === 'blast'
         continue
       }
       const eq = line.indexOf('=')
       if (eq === -1) continue
       const key = line.slice(0, eq).trim()
       const value = line.slice(eq + 1).trim()
-      if (currentRule === null) {
+      if (inBlast) {
+        const setting = parseString(value)
+        // An unknown trip or setting is ignored rather than guessed at. A typo that silently
+        // switched a rule off would be a grant nobody wrote.
+        if (BLAST_TRIPS.has(key) && BLAST_SETTINGS.has(setting)) {
+          policy.blast[key as BlastRadiusTrip] = setting as BlastSetting
+        }
+      } else if (currentRule === null) {
         if (key === 'contractGlobs') {
           policy.contractGlobs = parseStringArray(value)
         }
@@ -102,6 +131,6 @@ export function loadPolicy(root: string): Policy {
     }
     return policy
   } catch {
-    return DEFAULT_POLICY
+    return emptyPolicy()
   }
 }

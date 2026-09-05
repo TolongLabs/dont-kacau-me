@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { fetchChecks, fetchSince, findReceiptComment, runner, upsertReceiptComment, workItemByNumber } from './github'
+import {
+  fetchChecks,
+  fetchMentions,
+  fetchSince,
+  findReceiptComment,
+  runner,
+  upsertReceiptComment,
+  workItemByNumber
+} from './github'
 import type { WorkItemRef } from './types'
 
 type RunResult = ReturnType<typeof runner.run>
@@ -316,5 +324,244 @@ describe('workItemByNumber', () => {
       { ok: true, stdout: '', stderr: '' }
     )
     expect(workItemByNumber('/repo', 9)).toBeNull()
+  })
+})
+
+describe('fetchMentions', () => {
+  it('returns a MentionEvent for an issue mention', () => {
+    const since = '2026-09-05T07:47:42Z'
+    queue(
+      {
+        ok: true,
+        stdout: JSON.stringify([
+          {
+            id: '25488037457',
+            reason: 'mention',
+            unread: true,
+            updated_at: since,
+            subject: {
+              title: 'Signed-out visit to a deleted private record does not redirect',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/191',
+              latest_comment_url: 'https://api.github.com/repos/OWNER/REPO/issues/comments/5550383100',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_kgDOUE5Yiw' }
+          }
+        ]),
+        stderr: ''
+      },
+      { ok: true, stdout: 'I_191\n', stderr: '' }
+    )
+    const events = fetchMentions('/repo', since)
+    expect(events).toEqual([
+      {
+        kind: 'issue',
+        nodeId: 'I_191',
+        number: 191,
+        headline: 'Signed-out visit to a deleted private record does not redirect',
+        url: 'https://github.com/OWNER/REPO/issues/191',
+        updatedAt: since,
+        repoNodeId: 'R_kgDOUE5Yiw'
+      }
+    ])
+    expect(calls).toHaveLength(2)
+    const firstCall = calls[0]
+    expect(firstCall).toBeDefined()
+    if (firstCall) {
+      expect(firstCall.argv).toEqual([
+        'api',
+        `notifications?all=true&participating=true&since=${encodeURIComponent(since)}&per_page=50`
+      ])
+    }
+    const secondCall = calls[1]
+    expect(secondCall).toBeDefined()
+    if (secondCall) {
+      expect(secondCall.argv).toEqual(['api', 'repos/{owner}/{repo}/issues/191', '--jq', '.node_id'])
+    }
+  })
+
+  it('returns a MentionEvent for a pull request mention', () => {
+    const since = '2026-09-04T12:00:00Z'
+    queue(
+      {
+        ok: true,
+        stdout: JSON.stringify([
+          {
+            id: '1',
+            reason: 'mention',
+            unread: false,
+            updated_at: since,
+            subject: {
+              title: 'Fix the thing',
+              url: 'https://api.github.com/repos/OWNER/REPO/pulls/42',
+              latest_comment_url: 'https://api.github.com/repos/OWNER/REPO/pulls/comments/1',
+              type: 'PullRequest'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_42' }
+          }
+        ]),
+        stderr: ''
+      },
+      { ok: true, stdout: 'PR_42', stderr: '' }
+    )
+    const events = fetchMentions('/repo', since)
+    expect(events).toEqual([
+      {
+        kind: 'pr',
+        nodeId: 'PR_42',
+        number: 42,
+        headline: 'Fix the thing',
+        url: 'https://github.com/OWNER/REPO/pull/42',
+        updatedAt: since,
+        repoNodeId: 'R_42'
+      }
+    ])
+    expect(calls).toHaveLength(2)
+    const call = calls[1]
+    expect(call).toBeDefined()
+    if (call) {
+      expect(call.argv).toEqual(['api', 'repos/{owner}/{repo}/issues/42', '--jq', '.node_id'])
+    }
+  })
+
+  it('drops notifications that are not mentions', () => {
+    const since = '2026-09-03T00:00:00Z'
+    queue(
+      {
+        ok: true,
+        stdout: JSON.stringify([
+          {
+            id: '1',
+            reason: 'author',
+            updated_at: '2026-09-01T00:00:00Z',
+            subject: {
+              title: 'Author',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/1',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_1' }
+          },
+          {
+            id: '2',
+            reason: 'comment',
+            updated_at: '2026-09-01T00:00:00Z',
+            subject: {
+              title: 'Comment',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/2',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_2' }
+          },
+          {
+            id: '3',
+            reason: 'assign',
+            updated_at: '2026-09-01T00:00:00Z',
+            subject: {
+              title: 'Assign',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/3',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_3' }
+          },
+          {
+            id: '4',
+            reason: 'ci_activity',
+            updated_at: '2026-09-01T00:00:00Z',
+            subject: {
+              title: 'CI',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/4',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_4' }
+          },
+          {
+            id: '5',
+            reason: 'state_change',
+            updated_at: '2026-09-01T00:00:00Z',
+            subject: {
+              title: 'State change',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/5',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_5' }
+          },
+          {
+            id: '6',
+            reason: 'mention',
+            updated_at: since,
+            subject: {
+              title: 'Mentioned',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/6',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_6' }
+          }
+        ]),
+        stderr: ''
+      },
+      { ok: true, stdout: 'I_6\n', stderr: '' }
+    )
+    const events = fetchMentions('/repo', since)
+    expect(events).toEqual([
+      {
+        kind: 'issue',
+        nodeId: 'I_6',
+        number: 6,
+        headline: 'Mentioned',
+        url: 'https://github.com/OWNER/REPO/issues/6',
+        updatedAt: since,
+        repoNodeId: 'R_6'
+      }
+    ])
+    expect(calls).toHaveLength(2)
+  })
+
+  it('skips a mention when the node id lookup fails', () => {
+    const since = '2026-09-02T00:00:00Z'
+    queue(
+      {
+        ok: true,
+        stdout: JSON.stringify([
+          {
+            id: '1',
+            reason: 'mention',
+            updated_at: since,
+            subject: {
+              title: 'First',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/1',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_1' }
+          },
+          {
+            id: '2',
+            reason: 'mention',
+            updated_at: '2026-09-02T00:01:00Z',
+            subject: {
+              title: 'Second',
+              url: 'https://api.github.com/repos/OWNER/REPO/issues/2',
+              type: 'Issue'
+            },
+            repository: { full_name: 'OWNER/REPO', node_id: 'R_2' }
+          }
+        ]),
+        stderr: ''
+      },
+      { ok: false, stdout: '', stderr: 'not found' },
+      { ok: true, stdout: 'I_2\n', stderr: '' }
+    )
+    const events = fetchMentions('/repo', since)
+    expect(events).toEqual([
+      {
+        kind: 'issue',
+        nodeId: 'I_2',
+        number: 2,
+        headline: 'Second',
+        url: 'https://github.com/OWNER/REPO/issues/2',
+        updatedAt: '2026-09-02T00:01:00Z',
+        repoNodeId: 'R_2'
+      }
+    ])
+    expect(calls).toHaveLength(3)
   })
 })

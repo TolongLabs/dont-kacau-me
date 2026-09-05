@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { fetchSince, findReceiptComment, repoNodeId } from '../github'
+import { fetchMentions, fetchSince, findReceiptComment, repoNodeId } from '../github'
 import { parseReceipt } from '../receipt'
 import {
   dkmPath,
@@ -30,6 +30,7 @@ function line(e: PendingEvent): string {
     if (r.blockers.length > 0) parts.push(`blockers: ${r.blockers.join('; ')}`)
     return parts.join(' · ')
   }
+  if (e.tier === 'mentioned') return `${n} you were @mentioned: ${e.headline} — ${e.url}`
   return `${n} ${e.headline} — ${e.url}`
 }
 
@@ -40,7 +41,7 @@ function line(e: PendingEvent): string {
  */
 export function render(events: PendingEvent[]): string {
   if (events.length === 0) return ''
-  const order: TrackingTier[] = ['bound', 'followed', 'ambient']
+  const order: TrackingTier[] = ['mentioned', 'bound', 'followed', 'ambient']
   const out: string[] = ['⟨dkm⟩ activity since you last looked:']
   for (const tier of order) {
     const group = events.filter((e) => e.tier === tier)
@@ -164,6 +165,30 @@ export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: ()
       }
     }
     cursors.cursors[repoNodeId] = new Date().toISOString()
+
+    // A teammate calling the human out is the one thing worth reading before anything else, so
+    // it is its own tier and goes to every session. The notifications feed is account-wide, so
+    // only mentions on this repository are queued here.
+    const mentionKey = `mentions:${repoNodeId}`
+    const mentionSince = cursors.cursors[mentionKey] ?? new Date(Date.now() - 86_400_000).toISOString()
+    if (now() - startedAt > budgetMs) break
+    for (const m of fetchMentions(root, mentionSince)) {
+      if (m.repoNodeId !== repoNodeId) continue
+      for (const r of all) {
+        writePending(root, recipientKey(r.sessionId), {
+          eventId: `mention-${m.nodeId}-${Date.parse(m.updatedAt)}`,
+          rootId: m.nodeId,
+          hops: 0,
+          tier: 'mentioned',
+          workItem: { repoNodeId, itemNodeId: m.nodeId, number: m.number, kind: m.kind },
+          observedAt: m.updatedAt,
+          headline: m.headline,
+          url: m.url,
+          receipt: null
+        })
+      }
+    }
+    cursors.cursors[mentionKey] = new Date().toISOString()
   }
   writeCursors(root, cursors)
 }

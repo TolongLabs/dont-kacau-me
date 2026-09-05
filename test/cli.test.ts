@@ -145,7 +145,7 @@ test('an unknown command exits non-zero and names the valid ones', () => {
   try {
     const r = cli(root, ['frobnicate'], envFor(root, {}))
     expect(r.status).toBe(1)
-    expect(r.stderr).toContain('bind, follow, unfollow, note, blocker, revive, status')
+    expect(r.stderr).toContain('bind, follow, unfollow, note, blocker, mentions, run, status')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -160,5 +160,40 @@ test('outside a git worktree the CLI refuses rather than writing somewhere arbit
     expect(existsSync(join(bare, '.dkm'))).toBe(false)
   } finally {
     rmSync(bare, { recursive: true, force: true })
+  }
+})
+
+test('mentions prints one line per @mention on this repository and advances its cursor', () => {
+  const root = makeRepo()
+  try {
+    const notifications = JSON.stringify([
+      {
+        reason: 'mention',
+        updated_at: '2026-09-05T07:00:00Z',
+        subject: { title: 'Please review', url: 'https://api.github.com/repos/o/r/pulls/9', type: 'PullRequest' },
+        repository: { full_name: 'o/r', node_id: 'R_9' }
+      },
+      {
+        reason: 'comment',
+        updated_at: '2026-09-05T07:00:00Z',
+        subject: { title: 'Not a mention', url: 'https://api.github.com/repos/o/r/issues/8', type: 'Issue' },
+        repository: { full_name: 'o/r', node_id: 'R_9' }
+      }
+    ])
+    const env = envFor(root, {
+      'repo-view': [{ stdout: 'R_9\n' }, { stdout: 'R_9\n' }],
+      notifications: [{ stdout: notifications }, { stdout: '[]' }],
+      'issue-get': [{ stdout: 'PR_9\n' }]
+    })
+    const first = cli(root, ['mentions'], env)
+    expect(first.status).toBe(0)
+    expect(first.stdout).toBe('@mention #9 Please review — https://github.com/o/r/pull/9\n')
+
+    // The cursor moved, so the same mention is not printed twice.
+    const second = cli(root, ['mentions'], env)
+    expect(second.status).toBe(0)
+    expect(second.stdout).toBe('')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

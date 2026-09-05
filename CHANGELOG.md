@@ -8,6 +8,36 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-05
+
+The release that makes DKM the tool it was meant to be: sessions that work the goal while you are away, with every
+decision logged. **Breaking** in one place, noted under Changed.
+
+### Added
+
+- **`[blast]` in the policy.** Each blast-radius rule can be set to `deny`, `ask` or `off`, `outside-worktree` included.
+  A misspelt trip or setting is ignored, never guessed at. Nothing configured behaves as before.
+- **`tool = "*"`** in an allow rule matches every tool.
+- **`dkm init` writes the wide grant by default**: every rule off except `outside-worktree`, which is left on and one
+  word from off so the reader sees the choice.
+- **Sessions are the recipients.** Three tabs open in one directory are three peers, each receiving every event.
+  Sessions register at start, are touched on every prompt and every finished turn, are removed at end with their queue,
+  and are pruned after 48 hours if they crashed.
+- **@mentions.** A teammate calling you out on this repository is its own tier, delivered ahead of everything else, to
+  every session. `dkm mentions --watch` prints one line per new mention, forever, for a Monitor.
+- **`/dont-kacau-me:dkm-afk <goal>`.** From any tab: find your peers, start the mention watch, create a heartbeat, split
+  the goal, ship it. The three manual setup steps as one command.
+- **`dkm run`** starts the headless supervisor with `--permission-mode default --permission-prompts none`, so the policy
+  answers every prompt and anything it will not allow is denied without retry. Measured live before it was written.
+  `dkm revive` remains as an alias.
+
+### Changed
+
+- **Breaking:** the pending queue is keyed on session id, not worktree path. A queue written by 0.4.x for a worktree is
+  never drained; it is harmless and can be deleted from `.dkm/pending/`.
+- `dkm init` now says more tabs in this directory are peers, rather than warning people off exactly that.
+- `dkm status` reports pending events for the current session.
+
 ## [0.4.3] — 2026-09-04
 
 ### Fixed
@@ -167,6 +197,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.5.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.0...v0.4.1

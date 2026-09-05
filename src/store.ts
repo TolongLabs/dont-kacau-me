@@ -269,7 +269,7 @@ function isPendingEvent(v: unknown): v is PendingEvent {
     'hops' in v &&
     typeof v.hops === 'number' &&
     'tier' in v &&
-    (v.tier === 'bound' || v.tier === 'followed' || v.tier === 'ambient') &&
+    (v.tier === 'mentioned' || v.tier === 'bound' || v.tier === 'followed' || v.tier === 'ambient') &&
     'workItem' in v &&
     isWorkItemRef(v.workItem) &&
     'observedAt' in v &&

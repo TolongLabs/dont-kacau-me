@@ -50,8 +50,25 @@ export const defaultDeps: Deps = {
  * cannot be resumed, and the supervisor stops rather than silently starting a second session that
  * repeats work already done.
  */
+/**
+ * `--permission-mode default` puts every prompt to DKM's hook, and `--permission-prompts none` tells
+ * the harness that nobody else can answer: anything the policy does not allow is denied, the model
+ * is told not to retry it, and the run continues. Measured live before this was written: an edit
+ * the policy allowed went through, a write outside the worktree was denied, and the session
+ * reported it did not retry. Without these two flags a headless run inherits `defaultMode` from
+ * settings and may never consult the policy at all.
+ */
 export function buildArgv(options: ReviveOptions, sessionId: string | null): string[] {
-  const base = ['claude', '--output-format', 'json', ...options.claudeArgs]
+  const base = [
+    'claude',
+    '--output-format',
+    'json',
+    '--permission-mode',
+    'default',
+    '--permission-prompts',
+    'none',
+    ...options.claudeArgs
+  ]
   if (sessionId !== null) return [...base, '--resume', sessionId, '-p', 'Continue where you left off.']
   return [...base, '-p', options.prompt]
 }

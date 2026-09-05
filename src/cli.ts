@@ -1,9 +1,17 @@
-import { workItemByNumber } from './github'
+import { fetchMentions, repoNodeId, workItemByNumber } from './github'
 import { readReport, writeReport } from './hooks/report'
 import { repoRoot } from './hooks/runtime'
 import { runInit } from './init'
 import { runSupervised } from './revive-run'
-import { listPending, readBindings, readDecisions, recipientKey, writeBindings } from './store'
+import {
+  listPending,
+  readBindings,
+  readCursors,
+  readDecisions,
+  recipientKey,
+  writeBindings,
+  writeCursors
+} from './store'
 import type { Binding, WorkItemRef } from './types'
 
 function fail(message: string): never {
@@ -125,11 +133,35 @@ function main(): void {
     return
   }
 
-  if (command === 'revive') {
+  if (command === 'mentions') {
+    const watch = rest.includes('--watch')
+    const repo = repoNodeId(root)
+    if (repo === null) fail('no GitHub remote, or gh is not authenticated; mentions need both')
+    const key = `cli-mentions:${repo}`
+    const emit = (): void => {
+      const cursors = readCursors(root)
+      const since = cursors.cursors[key] ?? new Date(Date.now() - 86_400_000).toISOString()
+      for (const m of fetchMentions(root, since)) {
+        if (m.repoNodeId !== repo) continue
+        process.stdout.write(`@mention #${m.number} ${m.headline} — ${m.url}\n`)
+      }
+      cursors.cursors[key] = new Date().toISOString()
+      writeCursors(root, cursors)
+    }
+    emit()
+    if (!watch) return
+    // One line per new mention, forever; a Monitor turns each line into a notification.
+    for (;;) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60_000)
+      emit()
+    }
+  }
+
+  if (command === 'revive' || command === 'run') {
     const sep = rest.indexOf('--')
     const prompt = (sep === -1 ? rest : rest.slice(0, sep)).join(' ').trim()
     const claudeArgs = sep === -1 ? [] : rest.slice(sep + 1)
-    if (prompt.length === 0) fail('expected the prompt to run, e.g. dkm revive "work through issue 12"')
+    if (prompt.length === 0) fail('expected the goal to run, e.g. dkm run "work through issue 12"')
     const report = runSupervised({ root, prompt, claudeArgs, maxAttempts: 24 })
     if (report.outcome.kind === 'done') {
       process.stdout.write(`${report.outcome.result}\n`)
@@ -149,7 +181,9 @@ function main(): void {
     return
   }
 
-  fail(`unknown command: ${command}\nexpected one of: init, bind, follow, unfollow, note, blocker, revive, status`)
+  fail(
+    `unknown command: ${command}\nexpected one of: init, bind, follow, unfollow, note, blocker, mentions, run, status`
+  )
 }
 
 main()

@@ -169,7 +169,12 @@ export function drainAndRender(root: string): string {
  * classified, because which of them suppress the event is the harness's contract to state, not ours
  * to infer, and a hint that overstates is worse than one that hedges.
  */
-const ASKING_MODES = new Set(['manual', 'plan'])
+/**
+ * The harness sends `"default"` for the mode its UI labels Manual and its flag accepts as `manual`;
+ * the hook payload never carries the alias. Listing only the alias warned in exactly the mode DKM
+ * works in.
+ */
+const ASKING_MODES = new Set(['default', 'manual', 'plan'])
 
 export function permissionModeHint(root: string, mode: string | undefined): string {
   if (mode === undefined || ASKING_MODES.has(mode)) return ''

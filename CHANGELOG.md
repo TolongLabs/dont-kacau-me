@@ -8,6 +8,14 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-09-04
+
+### Fixed
+
+- The permission-mode hint warned in exactly the mode DKM works in. The harness sends `"default"` for the mode its UI
+  labels Manual and its flag accepts as `manual`; the hook payload never carries the alias, and the asking-mode list
+  only had the alias. Found by reading the hook contract rather than the flag's help text.
+
 ## [0.4.2] — 2026-09-04
 
 ### Added
@@ -159,6 +167,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.4.3]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...v0.4.0

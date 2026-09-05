@@ -1,6 +1,15 @@
 import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import type {
   Binding,
@@ -16,6 +25,7 @@ import type {
   Receipt,
   ResumeTicket,
   RevivalRecord,
+  SessionRecord,
   WorkItemRef
 } from './types'
 
@@ -318,13 +328,94 @@ export function writeLastEmit(root: string, f: LastEmitFile): void {
   writeJson(root, 'last-emit.json', f)
 }
 
+function isSessionRecord(v: unknown): v is SessionRecord {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    'sessionId' in v &&
+    typeof v.sessionId === 'string' &&
+    'worktreePath' in v &&
+    typeof v.worktreePath === 'string' &&
+    'startedAt' in v &&
+    typeof v.startedAt === 'string' &&
+    'lastSeen' in v &&
+    typeof v.lastSeen === 'string'
+  )
+}
+
+function sessionFile(root: string, sessionId: string): string {
+  return join(dkmPath(root), 'sessions', `${recipientKey(sessionId)}.json`)
+}
+
 /**
- * Pending events are queued per recipient worktree, not in one shared pile. A single queue has no
- * notion of who an event is for: whichever session drained first consumed it, and every other
- * session never saw it. The key is a hash so a worktree path becomes one safe directory name.
+ * A recipient is a session, not a worktree. Three tabs open in one directory are three peers, and
+ * keying the queue on the directory made them race for a single copy of every event. Sessions
+ * register here at start, are touched on every prompt and every finished turn, and are removed at
+ * end. A session that crashed without ending is pruned by age, together with its queue.
  */
-export function recipientKey(worktreePath: string): string {
-  return createHash('sha256').update(worktreePath).digest('hex').slice(0, 16)
+export function registerSession(root: string, sessionId: string, worktreePath: string, now: Date = new Date()): void {
+  const existing = readSession(root, sessionId)
+  const iso = now.toISOString()
+  atomicWrite(
+    sessionFile(root, sessionId),
+    JSON.stringify({ sessionId, worktreePath, startedAt: existing?.startedAt ?? iso, lastSeen: iso })
+  )
+}
+
+export function touchSession(root: string, sessionId: string, now: Date = new Date()): void {
+  const existing = readSession(root, sessionId)
+  if (existing === null) return
+  atomicWrite(sessionFile(root, sessionId), JSON.stringify({ ...existing, lastSeen: now.toISOString() }))
+}
+
+function readSession(root: string, sessionId: string): SessionRecord | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(sessionFile(root, sessionId), 'utf8'))
+    return isSessionRecord(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+export function unregisterSession(root: string, sessionId: string): void {
+  rmSync(sessionFile(root, sessionId), { force: true })
+  rmSync(join(dkmPath(root), 'pending', recipientKey(sessionId)), { recursive: true, force: true })
+}
+
+export const SESSION_MAX_AGE_MS = 48 * 60 * 60 * 1000
+
+export function liveSessions(root: string, now: Date = new Date(), maxAgeMs = SESSION_MAX_AGE_MS): SessionRecord[] {
+  const dir = join(dkmPath(root), 'sessions')
+  let names: string[]
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith('.json'))
+  } catch {
+    return []
+  }
+  const out: SessionRecord[] = []
+  for (const name of names) {
+    let rec: SessionRecord | null = null
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(join(dir, name), 'utf8'))
+      rec = isSessionRecord(parsed) ? parsed : null
+    } catch {}
+    if (rec === null) continue
+    if (now.getTime() - Date.parse(rec.lastSeen) > maxAgeMs) {
+      unregisterSession(root, rec.sessionId)
+      continue
+    }
+    out.push(rec)
+  }
+  return out.sort((a, b) => a.sessionId.localeCompare(b.sessionId))
+}
+
+/**
+ * Pending events are queued per recipient session, not in one shared pile. A single queue has no
+ * notion of who an event is for: whichever session drained first consumed it, and every other
+ * session never saw it. The key is a hash so a session id becomes one safe directory name.
+ */
+export function recipientKey(sessionId: string): string {
+  return createHash('sha256').update(sessionId).digest('hex').slice(0, 16)
 }
 
 export function listPending(root: string, recipient: string): PendingEvent[] {

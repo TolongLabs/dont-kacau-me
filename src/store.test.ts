@@ -6,11 +6,15 @@ import {
   appendDecision,
   drainPending,
   listPending,
+  liveSessions,
   readBindings,
   readCursors,
   readDecisions,
   readLastEmit,
   recipientKey,
+  registerSession,
+  touchSession,
+  unregisterSession,
   writeBindings,
   writeCursors,
   writeLastEmit,
@@ -248,4 +252,52 @@ test('a missing file yields a fresh object, not the shared fallback', () => {
   } finally {
     rmSync(other, { recursive: true, force: true })
   }
+})
+
+test('a session registers, is listed, and keeps its start time when re-registered', () => {
+  const t0 = new Date('2026-09-05T00:00:00Z')
+  const t1 = new Date('2026-09-05T01:00:00Z')
+  registerSession(tmpDir, 's1', '/wt/a', t0)
+  registerSession(tmpDir, 's1', '/wt/a', t1)
+  expect(liveSessions(tmpDir, t1)).toEqual([
+    { sessionId: 's1', worktreePath: '/wt/a', startedAt: t0.toISOString(), lastSeen: t1.toISOString() }
+  ])
+})
+
+test('touching a session moves lastSeen and nothing else', () => {
+  const t0 = new Date('2026-09-05T00:00:00Z')
+  const t1 = new Date('2026-09-05T02:00:00Z')
+  registerSession(tmpDir, 's1', '/wt/a', t0)
+  touchSession(tmpDir, 's1', t1)
+  expect(liveSessions(tmpDir, t1)[0]?.lastSeen).toBe(t1.toISOString())
+  expect(liveSessions(tmpDir, t1)[0]?.startedAt).toBe(t0.toISOString())
+})
+
+test('touching a session that never registered creates nothing', () => {
+  // Checked on disk, not through liveSessions: a malformed record is filtered there, which would
+  // hide a touch that wrote one.
+  touchSession(tmpDir, 'ghost')
+  expect(existsSync(join(tmpDir, '.dkm', 'sessions'))).toBe(false)
+})
+
+test('unregistering a session removes its queue with it', () => {
+  // A queue with no session to drain it would grow forever.
+  registerSession(tmpDir, 's1', '/wt/a')
+  writePending(tmpDir, recipientKey('s1'), samplePending('a'))
+  expect(listPending(tmpDir, recipientKey('s1'))).toHaveLength(1)
+  unregisterSession(tmpDir, 's1')
+  expect(liveSessions(tmpDir)).toEqual([])
+  expect(listPending(tmpDir, recipientKey('s1'))).toEqual([])
+})
+
+test('a session not seen within the age limit is pruned, queue and all', () => {
+  // A crashed session never reaches SessionEnd. Without this it stays a recipient forever and
+  // every event is copied into a queue nobody will read.
+  const old = new Date('2026-09-01T00:00:00Z')
+  const now = new Date('2026-09-05T00:00:00Z')
+  registerSession(tmpDir, 'stale', '/wt/a', old)
+  registerSession(tmpDir, 'fresh', '/wt/a', now)
+  writePending(tmpDir, recipientKey('stale'), samplePending('a'))
+  expect(liveSessions(tmpDir, now).map((s) => s.sessionId)).toEqual(['fresh'])
+  expect(listPending(tmpDir, recipientKey('stale'))).toEqual([])
 })

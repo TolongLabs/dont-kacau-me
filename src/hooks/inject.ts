@@ -2,7 +2,16 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fetchSince, findReceiptComment, repoNodeId } from '../github'
 import { parseReceipt } from '../receipt'
-import { dkmPath, drainPending, readBindings, readCursors, recipientKey, writeCursors, writePending } from '../store'
+import {
+  dkmPath,
+  drainPending,
+  liveSessions,
+  readBindings,
+  readCursors,
+  recipientKey,
+  writeCursors,
+  writePending
+} from '../store'
 import type { PendingEvent, Receipt, TrackingTier, WorkItemRef } from '../types'
 
 function short(sha: string): string {
@@ -43,21 +52,31 @@ export function render(events: PendingEvent[]): string {
   return `${out.join('\n')}\n`
 }
 
-type Recipient = { worktreePath: string; bound: WorkItemRef | null; followed: WorkItemRef[]; ambient: boolean }
+type Recipient = {
+  sessionId: string
+  worktreePath: string
+  bound: WorkItemRef | null
+  followed: WorkItemRef[]
+  ambient: boolean
+}
 
 /**
- * One entry per worktree, never a flattened map. The tier of an item depends on who is asking:
- * the worktree that owns #81 is bound to it, and a worktree that declared a dependency on it is
- * following it. Resolving that globally told a following session it was bound, because the answer
- * came from whichever binding happened to be first in the file.
+ * One entry per live session. The tier of an item still comes from the session's worktree binding:
+ * the worktree that owns #81 is bound to it, and every session open in that worktree is bound to it
+ * too. A session in a worktree with no binding row gets the same defaults `bindingFor` would write.
  */
 function recipients(root: string): Recipient[] {
-  return readBindings(root).bindings.map((b) => ({
-    worktreePath: b.worktreePath,
-    bound: b.bound,
-    followed: b.followed,
-    ambient: b.ambient
-  }))
+  const bindings = readBindings(root).bindings
+  return liveSessions(root).map((session) => {
+    const b = bindings.find((x) => x.worktreePath === session.worktreePath)
+    return {
+      sessionId: session.sessionId,
+      worktreePath: session.worktreePath,
+      bound: b?.bound ?? null,
+      followed: b?.followed ?? [],
+      ambient: b?.ambient ?? true
+    }
+  })
 }
 
 function tierFor(recipient: Recipient, nodeId: string): { tier: TrackingTier; item: WorkItemRef } | null {
@@ -131,7 +150,7 @@ export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: ()
       for (const r of all) {
         const claimed = tierFor(r, ev.nodeId)
         if (claimed === null && !r.ambient) continue
-        writePending(root, recipientKey(r.worktreePath), {
+        writePending(root, recipientKey(r.sessionId), {
           eventId: ev.nodeId,
           rootId: ev.nodeId,
           hops: 0,
@@ -149,8 +168,8 @@ export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: ()
   writeCursors(root, cursors)
 }
 
-export function drainAndRender(root: string): string {
-  return render(drainPending(root, recipientKey(root)))
+export function drainAndRender(root: string, sessionId: string): string {
+  return render(drainPending(root, recipientKey(sessionId)))
 }
 
 /**

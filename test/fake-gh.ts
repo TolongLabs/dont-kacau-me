@@ -17,6 +17,7 @@ function matchPattern(argv: string[]): string | null {
   if (first === 'pr' && second === 'list') return 'pr-list'
   if (first === 'api' && second !== undefined) {
     const path = second
+    if (path.startsWith('notifications?')) return 'notifications'
     // The real API addresses a repository as owner/repo. Accepting anything in that slot is how a
     // path built from a repo node ID passed the suite while 404ing against GitHub.
     const repoSegment = /^repos\/(\{owner\}\/\{repo\}|[^/{}]+\/[^/{}]+)\//.exec(path)

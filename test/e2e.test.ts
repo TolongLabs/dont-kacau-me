@@ -498,7 +498,7 @@ test('10. session-start drains pending events', () => {
       url: 'https://github.com/owner/repo/issues/1',
       receipt: null
     }
-    const inbox = join(root, '.dkm', 'pending', recipientKey(root))
+    const inbox = join(root, '.dkm', 'pending', recipientKey('s1'))
     mkdirSync(inbox, { recursive: true })
     writeFileSync(join(inbox, 'ev1.json'), JSON.stringify(pending))
     const env = setupForTest(root, {})
@@ -584,7 +584,7 @@ test('12. session-end leaves a ticket naming the session that just ended', () =>
   }
 })
 
-test('10c. one event reaches every worktree, each at the tier that worktree sees', () => {
+test('10c. one event reaches every session, each at the tier its worktree sees', () => {
   const root = makeRepo()
   try {
     mkdirSync(join(root, '.dkm'), { recursive: true })
@@ -601,6 +601,14 @@ test('10c. one event reaches every worktree, each at the tier that worktree sees
           { worktreePath: other, bound: null, followed: [item], ambient: true }
         ]
       })
+    )
+    // B's session is open in the other worktree; A's registers itself when the hook runs.
+    const sessionsDir = join(root, '.dkm', 'sessions')
+    mkdirSync(sessionsDir, { recursive: true })
+    const now = new Date().toISOString()
+    writeFileSync(
+      join(sessionsDir, `${recipientKey('s2')}.json`),
+      JSON.stringify({ sessionId: 's2', worktreePath: other, startedAt: now, lastSeen: now })
     )
     const issueList = JSON.stringify([
       {
@@ -622,7 +630,7 @@ test('10c. one event reaches every worktree, each at the tier that worktree sees
     expect(r.stdout).toContain('bound:')
 
     // B's copy is still waiting, and is labelled followed rather than bound.
-    const inboxB = join(root, '.dkm', 'pending', recipientKey(other))
+    const inboxB = join(root, '.dkm', 'pending', recipientKey('s2'))
     const files = readdirSync(inboxB)
     expect(files).toHaveLength(1)
     const queued = asRecord(JSON.parse(readFileSync(join(inboxB, files[0] ?? ''), 'utf8')))

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runner } from '../github'
 import { renderReceipt } from '../receipt'
-import { listPending, readCursors, recipientKey } from '../store'
+import { listPending, readCursors, recipientKey, registerSession } from '../store'
 import type { Receipt, WorkItemRef } from '../types'
 import { ingest } from './inject'
 
@@ -39,6 +39,9 @@ let argvs: string[][]
 const originalRun = runner.run
 
 function bindings(root: string, paths: string[]): void {
+  // One live session per worktree; recipients are sessions, and a worktree with no session open
+  // in it receives nothing.
+  for (const [i, p] of paths.entries()) registerSession(root, `session-${i}`, p)
   writeFileSync(
     join(root, '.dkm', 'bindings.json'),
     JSON.stringify({
@@ -119,6 +122,7 @@ test('within budget the receipt is still fetched', () => {
 })
 
 function ambientOnly(root: string): void {
+  registerSession(root, 'session-0', root)
   writeFileSync(
     join(root, '.dkm', 'bindings.json'),
     JSON.stringify({
@@ -134,7 +138,7 @@ test('an ambient-only worktree still queries the repository', () => {
   ambientOnly(tmpDir)
   ingest(tmpDir)
   expect(issueListCalls()).toBe(1)
-  expect(listPending(tmpDir, recipientKey(tmpDir)).map((e) => e.tier)).toEqual(['ambient'])
+  expect(listPending(tmpDir, recipientKey('session-0')).map((e) => e.tier)).toEqual(['ambient'])
 })
 
 test('an ambient-only worktree resolves the repository id rather than assuming one', () => {
@@ -147,6 +151,7 @@ test('an ambient-only worktree resolves the repository id rather than assuming o
 })
 
 test('a worktree that has opted out of ambient triggers no query', () => {
+  registerSession(tmpDir, 'session-0', tmpDir)
   writeFileSync(
     join(tmpDir, '.dkm', 'bindings.json'),
     JSON.stringify({
@@ -156,4 +161,25 @@ test('a worktree that has opted out of ambient triggers no query', () => {
   )
   ingest(tmpDir)
   expect(issueListCalls()).toBe(0)
+})
+
+test('two sessions in one worktree each receive their own copy', () => {
+  // The reason recipients are sessions. Keyed on the worktree, whichever tab drained first deleted
+  // the event and the other tab never saw it.
+  bindings(tmpDir, [tmpDir])
+  registerSession(tmpDir, 'session-1', tmpDir)
+  ingest(tmpDir)
+  expect(listPending(tmpDir, recipientKey('session-0'))).toHaveLength(1)
+  expect(listPending(tmpDir, recipientKey('session-1'))).toHaveLength(1)
+  expect(commentCalls()).toBe(1)
+})
+
+test('a worktree with no session open receives nothing', () => {
+  bindings(tmpDir, [tmpDir, '/wt/b'])
+  // /wt/b has a binding row but its session is gone.
+  require('node:fs').rmSync(join(tmpDir, '.dkm', 'sessions'), { recursive: true, force: true })
+  registerSession(tmpDir, 'session-0', tmpDir)
+  ingest(tmpDir)
+  expect(listPending(tmpDir, recipientKey('session-1'))).toHaveLength(0)
+  expect(listPending(tmpDir, recipientKey('session-0'))).toHaveLength(1)
 })

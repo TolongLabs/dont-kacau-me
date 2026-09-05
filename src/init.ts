@@ -117,22 +117,17 @@ export function runInit(root: string, force: boolean, checks: Check[] = prefligh
     `  1. Read ${target} and delete anything you did not mean to grant, then commit it.`,
     '  2. Keep working. Prompts you granted stop arriving in this session; nothing else to do.',
     '',
-    'When you want a second piece of work running at the same time:',
-    '  Give it its own worktree, not a second session in this directory. A worktree is a second',
-    '  checkout you can work in simultaneously, and DKM keys everything to its path:',
+    'To run several agents on this repository at once:',
+    '  Open more Claude Code tabs in this same directory. Each one is a peer: it gets its own copy',
+    "  of every update DKM delivers, and it can message the others with Claude Code's own",
+    '  session-to-session tools.',
     '',
-    '    git worktree add ../<name> -b <branch>',
-    '',
-    '  Open Claude Code there, then bind each one to the item it owns:',
+    '  To publish receipts to a GitHub issue or PR, bind this directory once from any tab:',
     '',
     '    /dont-kacau-me:dkm-bind <issue-number>',
     '',
-    '  Receipts then publish to those items, and /dont-kacau-me:dkm-follow <n> in one worktree',
-    "  brings the other one's contract changes into it. Binding needs an authenticated gh and a",
-    '  GitHub remote; everything above this line does not.',
-    '',
-    '  Two sessions in one directory share a single queue and will race for the same events, so',
-    '  give each its own worktree.'
+    '  Binding needs an authenticated gh and a GitHub remote; nothing above this line does.',
+    '  A second checkout on another branch is a git worktree, and can be bound to its own item.'
   )
   return { output: `${lines.join('\n')}\n`, wrote }
 }

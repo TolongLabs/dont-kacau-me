@@ -222,3 +222,58 @@ export function repoNodeId(repoRoot: string): string | null {
   const id = run.stdout.trim()
   return id.length > 0 ? id : null
 }
+
+export type MentionEvent = {
+  kind: 'issue' | 'pr'
+  nodeId: string
+  number: number
+  headline: string
+  url: string
+  updatedAt: string
+  repoNodeId: string
+}
+
+export function fetchMentions(repoRoot: string, sinceIso: string): MentionEvent[] {
+  const run = runner.run(repoRoot, [
+    'api',
+    `notifications?all=true&participating=true&since=${encodeURIComponent(sinceIso)}&per_page=50`
+  ])
+  if (!run.ok) return []
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(run.stdout)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  const out: MentionEvent[] = []
+  for (const item of parsed) {
+    if (!isObject(item)) continue
+    const reason = item.reason
+    if (reason !== 'mention') continue
+    const updatedAt = item.updated_at
+    const subject = item.subject
+    const repository = item.repository
+    if (!isString(updatedAt) || !isObject(subject) || !isObject(repository)) continue
+    const title = subject.title
+    const subjectUrl = subject.url
+    const subjectType = subject.type
+    const repoId = repository.node_id
+    if (!isString(title) || !isString(subjectUrl) || !isString(subjectType) || !isString(repoId)) continue
+    const numberMatch = /\/(?:issues|pulls)\/(\d+)$/.exec(subjectUrl)
+    if (numberMatch === null) continue
+    const number = Number(numberMatch[1])
+    if (subjectType !== 'Issue' && subjectType !== 'PullRequest') continue
+    const kind: MentionEvent['kind'] = subjectType === 'Issue' ? 'issue' : 'pr'
+    const url = subjectUrl
+      .replace(/^https:\/\/api\.github\.com\/repos\//, 'https://github.com/')
+      .replace(/\/pulls\//, '/pull/')
+    // Notifications do not carry the issue/PR node id, so resolve it separately.
+    const nodeRun = runner.run(repoRoot, ['api', `repos/{owner}/{repo}/issues/${number}`, '--jq', '.node_id'])
+    if (!nodeRun.ok) continue
+    const nodeId = nodeRun.stdout.trim()
+    if (nodeId.length === 0) continue
+    out.push({ kind, nodeId, number, headline: title, url, updatedAt, repoNodeId: repoId })
+  }
+  return out
+}

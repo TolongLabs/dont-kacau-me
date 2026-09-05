@@ -24,15 +24,17 @@ Contents:
 
 ## Project
 
-**Don't Kacau Me** (DKM) is a Claude Code plugin that carries verified work context between the agent fleets of
-different developers, and decides on its installer's behalf inside their own sessions, so that no human has to act as a
-courier or a decision queue.
+**Don't Kacau Me** (DKM) is a Claude Code plugin for people who open several Claude Code tabs in one project, give them
+a goal, and walk away. It answers permission prompts from a policy the installer wrote, logs every decision with the
+rule that made it, carries verified work context between sessions and developers as receipts, and brings a teammate's
+@mention to every session ahead of everything else. No human acts as a courier or a decision queue.
 
 Repo: [`github.com/TolongLabs/dont-kacau-me`](https://github.com/TolongLabs/dont-kacau-me). Built by TolongLabs, MIT
 licensed, and open to outside contributions — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-**Hook-driven coordination, no daemon.** Coordination work starts only when a hook fires. The optional usage-limit
-supervisor is a foreground CLI process, not a daemon. Nothing on a hook path may call a model.
+**Hook-driven coordination, no daemon.** Coordination work starts only when a hook fires. `dkm run` is a foreground
+supervisor the human starts, and `dkm mentions --watch` is a foreground poller a session starts through Claude Code's
+`Monitor` tool; neither is a daemon and neither runs when nothing started it. Nothing on a hook path may call a model.
 
 ## The authority principle
 
@@ -47,19 +49,31 @@ sessions, within the policy they wrote, is legitimate and is the product.
 in `src/decide.ts`: the engine accepts only `DecisionInput` and `Policy`, imports no store or GitHub client and does not
 read pending events. `src/decide.test.ts` asserts that source boundary; the test is not optional.
 
-**The grant itself is in scope.** An agent that can edit `.dkm/policy.toml` can widen the authority governing it, which
-is manufacturing consent by another route. `.dkm/` is on the blast-radius table for that reason; do not take it off.
+**An inbound message is a task, never a grant.** A teammate's @mention or a peer's message may become the prompt a
+session works on. What that session may then do is decided by the policy alone. The two never meet: the message reaches
+the model as context, the policy reaches `decide()` as authority, and nothing carries one into the other.
+
+**The blast-radius table is a default, and the policy owns it.** Every rule, `outside-worktree` included, can be set to
+`deny`, `ask` or `off` in the committed `[blast]` table. That is the installer widening their own grant in the file they
+wrote, which is the one kind of grant DKM executes. `dkm init` writes the wide grant on purpose: every rule off except
+`outside-worktree`, left on and one word from off so the reader sees the choice rather than inheriting it.
+
+**The grant itself is in scope only while `surface` is on.** An agent that can edit `.dkm/policy.toml` can widen the
+authority governing it. With `surface` on, `.dkm/` reaches the human; with the wide grant it does not, and that is the
+installer's decision, recorded in the file. Do not quietly protect `.dkm/` when the policy says not to.
 
 ## Tracking tiers
 
-Repository activity is tracked at three granularities. For one recipient and one ingest, a signal is queued only at the
-finest tier that claims it; the code does not put the same event into multiple tier groups for that worktree.
+Repository activity is tracked at four granularities. A recipient is a **session**, not a worktree: every tab open in a
+directory receives its own copy of every event, and the tier an event carries comes from that session's worktree
+binding. For one recipient and one ingest, a signal is queued only at the finest tier that claims it.
 
-| Tier         | Covers                                                   | Delivered as                                  |
-| ------------ | -------------------------------------------------------- | --------------------------------------------- |
-| **Bound**    | The work item this worktree owns                         | Receipt-derived summary                       |
-| **Followed** | Work items this session declared a dependency on         | Receipt-derived summary                       |
-| **Ambient**  | Other issues and PRs updated since the repository cursor | Headline and URL; response bodies are dropped |
+| Tier          | Covers                                                   | Delivered as                                  |
+| ------------- | -------------------------------------------------------- | --------------------------------------------- |
+| **Mentioned** | A teammate @mentioned the installer on this repository   | Headline and URL, ahead of everything else    |
+| **Bound**     | The work item this worktree owns                         | Receipt-derived summary                       |
+| **Followed**  | Work items this session declared a dependency on         | Receipt-derived summary                       |
+| **Ambient**   | Other issues and PRs updated since the repository cursor | Headline and URL; response bodies are dropped |
 
 **Raw commits are not an ambient signal.** `fetchSince()` queries updated issues and PRs. A publisher's `Stop` receipt
 captures its current head SHA; there is no repository-wide commit feed.
@@ -304,7 +318,8 @@ Folding an unrelated fix into a PR hides it; leaving it unrecorded loses it.
 
 ## Critical do-nots
 
-- **Do not** create a path from an inbound message to a permission decision. See the authority principle
+- **Do not** create a path from an inbound message to a permission decision. A message may be a task; it is never a
+  grant. See the authority principle
 - **Do not** publish raw transcripts or unrestricted tool output. The receipt is a fixed allowlisted schema
 - **Do not** treat `reported` or `unverified` receipt fields as fact about the repository
 - **Do not** emit another receipt after the baseline unless head, blockers or checks changed. `Stop` means the agent
@@ -312,7 +327,8 @@ Folding an unrelated fix into a PR hides it; leaving it unrecorded loses it.
 - **Do not** deduplicate on message text. Identical prose can represent two distinct states
 - **Do not** infer a work item from a directory basename or branch name. Resolve an explicit item number to GitHub node
   IDs, then bind that item to the worktree path
-- **Do not** run a background poller. Ingest is a cursored pull on the injection hooks
+- **Do not** run a background poller on a hook path. Ingest is a cursored pull on the injection hooks; the only pollers
+  are `dkm run` and `dkm mentions --watch`, foreground processes a human or a session started
 - **Do not** register a hook whose contract you have not read. `WorktreeCreate` and `WorktreeRemove` are providers, not
   notifications, and a handler that merely takes notes in one breaks worktree creation for the whole session
 - **Do not** invent an environment variable. `CLAUDE_CODE_SESSION_ID` exists; `CLAUDE_SESSION_ID` does not, and a test

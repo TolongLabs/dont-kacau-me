@@ -7,9 +7,9 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
 ![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/v0.5.0-informational?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.5.1-informational?style=for-the-badge)
 
-**A Claude Code plugin that stops your AI coding sessions from interrupting you.**
+**A Claude Code plugin that answers for your AI coding sessions — and keeps them working while you are away.**
 
 _Kacau_ is Malay for "to disturb". The name is the product: don't bother me.
 
@@ -25,7 +25,7 @@ _Kacau_ is Malay for "to disturb". The name is the product: don't bother me.
     <li><a href="#what-dkm-does-about-them">What DKM does about them</a></li>
     <li><a href="#the-rule-that-keeps-this-safe">The rule that keeps this safe</a></li>
     <li><a href="#getting-started">Getting started</a></li>
-    <li><a href="#the-five-commands">The five commands</a></li>
+    <li><a href="#the-commands">The commands</a></li>
     <li><a href="#what-it-looks-like-in-practice">What it looks like in practice</a></li>
     <li><a href="#what-dkm-cannot-do">What DKM cannot do</a></li>
     <li><a href="#under-the-hood">Under the hood</a></li>
@@ -41,12 +41,13 @@ _Kacau_ is Malay for "to disturb". The name is the product: don't bother me.
 
 ## Is this for you?
 
-You run **more than one Claude Code session at the same time** — usually one per git worktree, which is just a second
-checkout of your repository you can work in simultaneously. One session fixes a bug, another builds a feature.
+You open **several Claude Code tabs in one project directory**, tell them a goal, and walk away. One tab fixes a bug,
+another builds a feature, and you check back in the morning. A second git worktree is for a second branch — a second
+session does not need one.
 
 That works. But two new problems show up, and they get **worse the better your agents get**.
 
-If you only ever run one session at a time, you do not need DKM yet.
+If you only ever run one session at a time, and never leave it alone, you do not need DKM yet.
 
 ## The two problems
 
@@ -93,17 +94,28 @@ under `src/` is fine._ Those prompts stop reaching you.
 
 Every decision made on your behalf is logged, so you can read back exactly what happened while you slept.
 
+### And it works the goal while you are away
+
+`/dont-kacau-me:dkm-afk <goal>` turns a tab into a peer that ships the goal unattended: it finds the other sessions open
+in the same directory, starts a watch that delivers every new @mention of you on the repository, creates a heartbeat so
+nothing stalls, splits the work and gets on with it.
+
+A teammate's 2am @mention is read and answered on the issue by a peer, not left waiting for you. For a run with no tab
+at all, [`dkm run`](#dkm-run-a-run-that-outlives-its-usage-limit) starts the same kind of work headlessly.
+
 ### What about `--dangerously-skip-permissions`?
 
 It solves the same annoyance by removing the question rather than answering it, and a lot of people running several
-sessions already use it. The difference is what happens to the prompts you did **not** want to skip.
+sessions already use it. The default grant `dkm init` writes is wide on purpose — it answers what that flag would. What
+stays different is the record, the receipts and the one boundary:
 
-|                                           | `--dangerously-skip-permissions` | A DKM policy                               |
-| ----------------------------------------- | -------------------------------- | ------------------------------------------ |
-| Routine prompts                           | gone                             | gone                                       |
-| `rm -rf`, `git push`, a migration, `.env` | **also gone**                    | still stop you                             |
-| A write outside this worktree             | **allowed**                      | denied                                     |
-| What was decided while you slept          | nothing recorded                 | every decision, with the rule that made it |
+|                                           | `--dangerously-skip-permissions` | A DKM policy                                             |
+| ----------------------------------------- | -------------------------------- | -------------------------------------------------------- |
+| Routine prompts                           | gone                             | gone                                                     |
+| `rm -rf`, `git push`, a migration, `.env` | **also gone**                    | gone under the default grant; any rule can be left on    |
+| A write outside this worktree             | **allowed**                      | **denied** — the one rule `dkm init` does not switch off |
+| What was decided while you slept          | nothing recorded                 | every decision, with the rule that made it               |
+| What lands on the work item               | nothing                          | a receipt with SHAs, changed paths and check results     |
 
 **DKM only decides when Claude Code asks it to.** A session that answers its own prompts never sends DKM the question,
 so a committed policy sits unused. That covers `--dangerously-skip-permissions` and any non-asking `--permission-mode`,
@@ -115,22 +127,26 @@ Since v0.4.1 a session in one of those modes says so at startup rather than look
 
 > Auto-answering may **execute a decision you already made**. It must never **invent one**.
 
-Some things always reach you no matter what your policy says. These rules run **before** your allowances and **cannot be
-switched off from the policy file**:
+Five blast-radius rules run **before** your allowances. Each is a setting in `[blast]` — `deny`, `ask` or `off` — and
+unconfigured, `outside-worktree` denies while the rest ask. The policy `dkm init` writes is deliberately wide: it
+switches every one of them off except `outside-worktree`.
 
-| If the action would…                                    | DKM answers |
-| ------------------------------------------------------- | ----------- |
-| Delete data, drop a column, or write a migration        | ask you     |
-| Post, publish, deploy, send, or open a network write    | ask you     |
-| Spend money                                             | ask you     |
-| Touch a lockfile, an exported API surface, or `.env`    | ask you     |
-| Touch anything under `.dkm/`, which is the grant itself | ask you     |
-| Write outside the session's own worktree                | **deny**    |
-| Match a rule you wrote, and trip none of the above      | allow       |
+| If the action would…                                 | Rule               | The grant `dkm init` writes |
+| ---------------------------------------------------- | ------------------ | --------------------------- |
+| Delete data, drop a column, or write a migration     | `data-loss`        | off                         |
+| Post, publish, deploy, send, or open a network write | `egress`           | off                         |
+| Spend money                                          | `money`            | off                         |
+| Touch a lockfile, `package.json`, `.env` or `.dkm/`  | `surface`          | off                         |
+| Write outside the session's own worktree             | `outside-worktree` | **deny**                    |
+| Match a rule you wrote, and trip none of the above   | `[[allow]]`        | allow                       |
 
-`.dkm/` is on that list so an agent cannot widen its own permissions by editing the file that grants them.
+The grant is wide because it is the grant someone reaching for `--dangerously-skip-permissions` actually means: every
+prompt answered, inside the worktree. What it keeps over that flag is the log — every decision in `.dkm/decisions.jsonl`
+with the rule that made it — and the one line that stops an agent writing somewhere you cannot see. `outside-worktree`
+is left on, and left one word from `off`, so the choice is visible rather than inherited. Switch any rule back to `ask`
+or `deny` in `[blast]`; `.dkm/` is protected only when `surface` is on.
 
-**That asymmetry is the whole pitch: the boring prompts vanish, the dangerous ones do not.**
+**The default grant is wide. The difference from skipping permissions is the log, the receipts and the boundary.**
 
 ![Six-panel comic: separate worktrees finish at 3am, manual copying loses provenance, the Stop hook writes a measured receipt, a teammate reads it, policy clears routine prompts, and a database migration waits for the sleeping developer](assets/dkm-comic.png)
 
@@ -140,16 +156,12 @@ switched off from the policy file**:
 need an authenticated [`gh`](https://cli.github.com/) and a repository whose work you track in GitHub issues or PRs; for
 the policy half you need neither.
 
-1. **Install the plugin.** No clone needed.
+1. **Install the plugin.**
 
    ```bash
    claude plugin marketplace add TolongLabs/dont-kacau-me
    claude plugin install dont-kacau-me@tolonglabs
    ```
-
-   To try it for one session without installing, clone the repository and use
-   `claude --plugin-dir /absolute/path/to/dont-kacau-me` instead. Adding a local clone as a marketplace works too, but
-   the trailing slash matters there: `claude plugin marketplace add ./`, never a bare `.`.
 
 1. **Set it up in a repository.** Restart Claude Code so it loads the plugin, then run:
 
@@ -157,21 +169,17 @@ the policy half you need neither.
    /dont-kacau-me:dkm-init
    ```
 
-   This checks your prerequisites, writes a starter `.dkm/policy.toml` built from what the repository actually contains,
-   and prints what just became automatic. Read the file it wrote, delete anything you did not mean to grant, and commit
-   it. **That file is your grant**, so treat it as one: never copy a policy whose authority you do not intend to hand
-   over.
+   This checks your prerequisites and writes `.dkm/policy.toml` — a wide grant: every prompt answered, nothing written
+   outside the worktree. Read the file, delete anything you did not mean to grant, and commit it. **That file is your
+   grant**, so treat it as one: never copy a policy whose authority you do not intend to hand over.
 
-   Nothing else is required. Your prompts stop arriving from here on, and this half works alone, in one session, with no
-   GitHub issue.
+   Your prompts stop arriving from here on, and this half works alone, in one session, with no GitHub issue. To publish
+   receipts to a work item, bind once from any tab with `/dont-kacau-me:dkm-bind <number>`; that step needs an
+   authenticated `gh` and a GitHub remote, and nothing else does.
 
-1. **Only if you want receipts:** tell a session which work item it owns.
-
-   ```text
-   /dont-kacau-me:dkm-bind 12
-   ```
-
-   Receipts then publish themselves. This step needs an authenticated `gh` and a GitHub remote; step 2 does not.
+1. **Keep working — here or from more tabs.** The policy already applies in this session. To run a goal while you are
+   away, open more Claude Code tabs in the same directory — each is a peer that gets its own copy of every event — and
+   run `/dont-kacau-me:dkm-afk <goal>` in one of them.
 
 ## The commands
 
@@ -192,7 +200,7 @@ you pass `--force`.
 
 The close-the-laptop path is not a slash command; it is a process you start yourself, described next.
 
-### Surviving a usage limit
+### `dkm run`: a run that outlives its usage limit
 
 A long unattended run used to end the moment your usage limit was reached. Start it under the supervisor instead:
 
@@ -213,10 +221,27 @@ nothing runs in the background when you are not running it.
 
 ## What it looks like in practice
 
-Five situations DKM is built for. Expand whichever one sounds like your week.
+Six situations DKM is built for. Expand whichever one sounds like your week.
 
 <details>
-<summary><b>1. Overnight handoff — skip the 3am ping</b></summary>
+<summary><b>1. Away for the night — the goal keeps moving</b></summary>
+
+Three tabs are open in one directory. In one of them you say:
+
+```text
+/dont-kacau-me:dkm-afk get issue 12 to a pull request
+```
+
+The tab finds its peers, starts the mention watch and a heartbeat, splits the goal and works. At 2am a teammate
+@mentions you on the issue asking whether the fix landed. The watch delivers the line to a peer, which reads the thread
+and replies on the issue with what it did and the commit it landed in.
+
+You read the receipt in the morning. Nobody waited on you.
+
+</details>
+
+<details>
+<summary><b>2. Overnight handoff — skip the 3am ping</b></summary>
 
 A teammate needs to know whether your agent finished before they can start. Without DKM they message you and wait. With
 DKM the work item already carries the head SHA, changed paths and check results, so they read it instead of asking.
@@ -226,7 +251,7 @@ You did nothing to publish it. The first bound `Stop` wrote the receipt when the
 </details>
 
 <details>
-<summary><b>2. Contract change — warn a dependent session</b></summary>
+<summary><b>3. Contract change — warn a dependent session</b></summary>
 
 Agent A alters a database schema on PR #81. Agent B is building against the old shape in another worktree and would
 normally discover the mismatch at merge, after both sides have paid for it.
@@ -242,18 +267,18 @@ developers' machines, provided both have the repository and an authenticated `gh
 </details>
 
 <details>
-<summary><b>3. Routine prompts — clear the decision queue</b></summary>
+<summary><b>4. Routine prompts — clear the decision queue</b></summary>
 
 Three agents stop on three prompts that need no new judgement: run the formatter, run the tests, write a file under
 `src/`. Each one is a context switch for you.
 
 Write those grants once in `.dkm/policy.toml` and they stop arriving. A fourth prompt that touches a migration still
-waits, because blast-radius rules run first.
+waits if you left `data-loss` on, because blast-radius rules run first.
 
 </details>
 
 <details>
-<summary><b>4. Morning review — inspect the decision log</b></summary>
+<summary><b>5. Morning review — inspect the decision log</b></summary>
 
 ```text
 /dont-kacau-me:dkm-status
@@ -265,7 +290,7 @@ transcripts. A decision with no log entry is a bug, and the test suite fails on 
 </details>
 
 <details>
-<summary><b>5. Human judgement — report a blocker</b></summary>
+<summary><b>6. Human judgement — report a blocker</b></summary>
 
 An agent reaches a genuine judgement call: two viable designs, or a requirement nobody wrote down. It should not invent
 your intent.
@@ -281,10 +306,14 @@ teammates can see it without anyone being interrupted.
 
 ## What DKM cannot do
 
-- **No live mid-turn delivery.** A session learns about a receipt when it starts or receives a prompt because ingest is
-  a cursored pull on injection hooks. A supervised watch or cross-session messaging needs a lifecycle v1 does not have.
+- **No live mid-turn delivery of receipts.** The mention watch is live — `dkm mentions --watch` prints each new @mention
+  as a poll sees it — but a session still learns about receipts when it starts or receives a prompt, because ingest is a
+  cursored pull on injection hooks.
 - **No cross-machine propagation beyond GitHub.** v1 uses one GitHub comment per work item and each checkout's local
   `.dkm/` state. Reaching a machine beyond what the repository carries is a v3 concern.
+- **A non-asking permission mode bypasses the policy entirely.** `--dangerously-skip-permissions` and any
+  `--permission-mode` that answers its own prompts never emit `PermissionRequest`, so no decision is made or logged. A
+  session in one says so at startup.
 - **No inbound consent path.** Another Claude session cannot approve a prompt, and a relayed approval is untrusted.
   `decide()` accepts only permission input and policy, importing neither the pending store nor the GitHub client.
 - **No learning precedent store yet.** v1 authority comes from human-written, committed policy, not accumulated
@@ -295,8 +324,8 @@ teammates can see it without anyone being interrupted.
   before rendering the receipt.
 - **No enforced hop budget.** `rootId` and `hops` are written and shape-checked but never incremented, rejected or used
   for control flow.
-- **Narrow ambient feed.** Ambient ingest sees issues and PRs from the updated-items query, with no separate @mention or
-  base-branch CI source.
+- **Narrow ambient feed.** Ambient ingest sees issues and PRs from the updated-items query, with no base-branch CI
+  source. @mentions are not ambient; they are their own tier.
 
 ## Under the hood
 
@@ -320,13 +349,13 @@ The subsections below stay at the system-narrative level. Implementation contrac
 <details>
 <summary><b>The hook lifecycle</b></summary>
 
-| Hook event          | DKM action                                              | Observable result                                  |
-| ------------------- | ------------------------------------------------------- | -------------------------------------------------- |
-| `Stop`              | Publish a baseline, then compare later tracked state    | Update one receipt only after a tracked delta      |
-| `SessionStart`      | Pull repository updates and drain this worktree's queue | Inject available context, and a hint if unbound    |
-| `UserPromptSubmit`  | Run the same pull with a rate limit, then drain         | Inject available context on a later prompt         |
-| `PermissionRequest` | Evaluate policy, append a record and emit or defer      | Execute a prior grant or leave the prompt to human |
-| `SessionEnd`        | Record the supplied session details                     | Leave a diagnostic resume ticket on disk           |
+| Hook event          | DKM action                                                                | Observable result                                  |
+| ------------------- | ------------------------------------------------------------------------- | -------------------------------------------------- |
+| `Stop`              | Touch the session, then measure a bound worktree                          | Update one receipt only after a tracked delta      |
+| `SessionStart`      | Register the session, pull repository updates, drain this session's queue | Inject context, plus mode and binding hints        |
+| `UserPromptSubmit`  | Register or touch the session, run the same pull rate-limited, drain      | Inject available context on a later prompt         |
+| `PermissionRequest` | Evaluate policy, append a record and emit or defer                        | Execute a prior grant or leave the prompt to human |
+| `SessionEnd`        | Unregister the session and its queue, record the details                  | Leave a diagnostic resume ticket on disk           |
 
 - `Stop` ends a response, not the work; after the baseline, unchanged tracked state produces no receipt.
 - DKM registers no worktree lifecycle hook. Explicit binding lets the user choose the GitHub item a worktree owns.
@@ -339,7 +368,9 @@ The subsections below stay at the system-narrative level. Implementation contrac
 <details>
 <summary><b>Receipt delivery and tracking</b></summary>
 
-A signal is queued only at the finest tier that claims it for one recipient and ingest.
+A signal is queued only at the finest tier that claims it for one recipient and ingest. A recipient is a session, not a
+worktree: every tab open in the directory gets its own copy of every event, and a worktree with no session open receives
+nothing.
 
 | Tier          | Covers                                                         | Delivered as                                               |
 | ------------- | -------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -350,7 +381,7 @@ A signal is queued only at the finest tier that claims it for one recipient and 
 
 - The current GitHub query returns updated issues and PRs; raw commits are not an ambient signal.
 - DKM discards body fields before building a pending event.
-- Separate @mention and base-branch CI feeds are not implemented.
+- @mentions arrive through the notifications feed as their own tier; a base-branch CI feed is not implemented.
 
 </details>
 
@@ -393,18 +424,23 @@ neither the pending-event store nor the GitHub client.
 1. Explicit policy allow rules for paths, tools and commands granted in advance.
 1. The default human path for anything unmatched: `ask`.
 
-The table is mechanical rather than model-assessed because agents are poor at self-assessing risk. `.dkm/` is protected
-because an agent that can edit its grant can widen that authority without anyone deciding to. This is the exact form of
-the plain-English table in [the rule that keeps this safe](#the-rule-that-keeps-this-safe):
+The rules are mechanical rather than model-assessed because agents are poor at self-assessing risk. `.dkm/` is on the
+surface list because an agent that can edit its grant can widen that authority without anyone deciding to. Each blast
+row's answer is the setting in `[blast]` — `deny`, `ask` or `off` — and a rule set to `off` is not evaluated at all.
+This is the exact form of the plain-English table in [the rule that keeps this safe](#the-rule-that-keeps-this-safe):
 
-| Recognised input                                                           | Result  |
-| -------------------------------------------------------------------------- | ------- |
-| A path outside the session worktree                                        | `deny`  |
-| Recursive forced removal, destructive SQL or a `migrations`/`drizzle` path | `ask`   |
-| Recognised network, push, deployment, publication or release commands      | `ask`   |
-| A package manifest, supported lockfile, `.env` file or path under `.dkm/`  | `ask`   |
-| The first matching policy allow rule, after no blast-radius match          | `allow` |
-| Anything else                                                              | `ask`   |
+| Recognised input                                                           | Result                                                 |
+| -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| A path outside the session worktree                                        | the `outside-worktree` setting — `deny` unconfigured   |
+| Recursive forced removal, destructive SQL or a `migrations`/`drizzle` path | the `data-loss` setting — `ask` unconfigured           |
+| Recognised network, push, deployment, publication or release commands      | the `egress` and `money` settings — `ask` unconfigured |
+| A package manifest, supported lockfile, `.env` file or path under `.dkm/`  | the `surface` setting — `ask` unconfigured             |
+| The first matching policy allow rule, after no blast-radius match          | `allow`                                                |
+| Anything else                                                              | `ask`                                                  |
+
+`dkm init` writes the wide grant: every rule `off` except `outside-worktree`, and one allow rule with `tool = "*"`.
+Delivery follows the same model as the rest of the product — a recipient is a session, not a worktree, so every open tab
+gets its own copy of every event.
 
 On its normal path, every permission evaluation appends to `.dkm/decisions.jsonl` before DKM emits. The status command
 shows the total valid-record count and the five most recent records; a later receipt counts decisions since the prior
@@ -433,16 +469,17 @@ No code path changes credentials or the account, and nothing remains active once
 ## Configuration
 
 `.dkm/policy.toml` is the only committed file under `.dkm/`; all other DKM state is git-ignored. Blast-radius rules run
-before the file and cannot be overridden from it. Anything unmatched defaults to the human path: `ask`.
+before allow rules, and `[blast]` sets each of them to `deny`, `ask` or `off` — a rule that is `off` is not evaluated.
+Anything unmatched defaults to the human path: `ask`.
 
-| Key or section    | Value shape                      | Controls                                       | Safety behavior                                             |
-| ----------------- | -------------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
-| `version`         | Integer by convention            | Present in the file; the parser ignores it     | Loaded policy remains version 1                             |
-| `contractGlobs`   | Array of path globs              | Which changed paths form `contractDelta`       | Changes receipt content, not permission decisions           |
-| `[blast].<rule>`  | `deny`, `ask` or `off`           | What each blast-radius rule does when it trips | Nothing configured: `outside-worktree` denies, the rest ask |
-| `[[allow]].tool`  | Tool name, or `*` for every tool | Tool eligible for a prior allow grant          | Still loses to a blast-radius rule that is on               |
-| `[[allow]].match` | Optional substring               | Narrows the first command, path or URL input   | First matching allow rule wins                              |
-| `[[allow]].paths` | Optional array of path globs     | Requires at least one candidate path to match  | An outside-worktree candidate still denies                  |
+| Key or section    | Value shape                      | Controls                                       | Safety behavior                                                  |
+| ----------------- | -------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------- |
+| `version`         | Integer by convention            | Present in the file; the parser ignores it     | Loaded policy remains version 1                                  |
+| `contractGlobs`   | Array of path globs              | Which changed paths form `contractDelta`       | Changes receipt content, not permission decisions                |
+| `[blast].<rule>`  | `deny`, `ask` or `off`           | What each blast-radius rule does when it trips | Nothing configured: `outside-worktree` denies, the rest ask      |
+| `[[allow]].tool`  | Tool name, or `*` for every tool | Tool eligible for a prior allow grant          | Still loses to a blast-radius rule that is on                    |
+| `[[allow]].match` | Optional substring               | Narrows the first command, path or URL input   | First matching allow rule wins                                   |
+| `[[allow]].paths` | Optional array of path globs     | Requires at least one candidate path to match  | An outside-worktree candidate still denies while that rule is on |
 
 ## Tech stack
 
@@ -483,8 +520,10 @@ commitlint.config.js
 package.json
 tsconfig.json
 commands/                        # slash commands
+  dkm-afk.md
   dkm-bind.md
   dkm-follow.md
+  dkm-init.md
   dkm-note.md
   dkm-status.md
 hooks/hooks.json                 # hook declarations
@@ -501,13 +540,17 @@ src/
   decide.ts                      # blast-radius and allow evaluation
   git.ts                         # repository measurements
   github.ts                      # gh wrapper
+  init.ts                        # dkm init checks and the starter policy
+  init.test.ts                   # init output and generated-grant tests
   policy.ts                      # restricted policy parser
+  policy.test.ts                 # [blast] and allow-rule parsing tests
   receipt.ts                     # receipt render, parse and fingerprint
   revive-run.ts                  # supervised resume loop
   revive.ts                      # limit classification and wait calculation
   store.ts                       # shared .dkm state
   types.ts                       # shared contracts
   hooks/                         # registered hook entrypoints
+    unbound-hint.test.ts         # startup and permission-mode hint tests
 test/
   cli.test.ts                    # command integration tests
   e2e.test.ts                    # hook child-process tests

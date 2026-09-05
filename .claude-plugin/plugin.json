@@ -1,7 +1,7 @@
 {
   "name": "dont-kacau-me",
   "description": "Carries verified work context between developers' agent fleets, and decides on your behalf from a policy you wrote",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "author": {
     "name": "TolongLabs"
   },

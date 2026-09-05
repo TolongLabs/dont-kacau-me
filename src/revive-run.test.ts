@@ -55,7 +55,19 @@ describe('buildArgv', () => {
       { root: '/r', prompt: 'do the thing', claudeArgs: ['--effort', 'high'], maxAttempts: 3 },
       null
     )
-    expect(argv).toEqual(['claude', '--output-format', 'json', '--effort', 'high', '-p', 'do the thing'])
+    expect(argv).toEqual([
+      'claude',
+      '--output-format',
+      'json',
+      '--permission-mode',
+      'default',
+      '--permission-prompts',
+      'none',
+      '--effort',
+      'high',
+      '-p',
+      'do the thing'
+    ])
   })
 
   it('resumes by session id instead of restarting the prompt', () => {

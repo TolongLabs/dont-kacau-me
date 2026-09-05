@@ -1,6 +1,6 @@
 export type FieldKind = 'measured' | 'reported' | 'unverified'
 
-export type TrackingTier = 'bound' | 'followed' | 'ambient'
+export type TrackingTier = 'mentioned' | 'bound' | 'followed' | 'ambient'
 
 export type PermissionDecision = 'allow' | 'deny' | 'ask'
 

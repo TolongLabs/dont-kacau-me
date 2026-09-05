@@ -6,7 +6,7 @@ import { runner } from '../github'
 import { renderReceipt } from '../receipt'
 import { listPending, readCursors, recipientKey, registerSession } from '../store'
 import type { Receipt, WorkItemRef } from '../types'
-import { ingest } from './inject'
+import { ingest, render } from './inject'
 
 const item: WorkItemRef = { repoNodeId: 'R_1', itemNodeId: 'I_7', number: 7, kind: 'issue' }
 
@@ -34,6 +34,7 @@ const issueList = JSON.stringify([
   }
 ])
 
+let notifications = '[]'
 let tmpDir: string
 let argvs: string[][]
 const originalRun = runner.run
@@ -66,6 +67,8 @@ beforeEach(() => {
     const path = argv[1] ?? ''
     if (argv[0] === 'repo' && argv[1] === 'view') return { ok: true, stdout: 'R_current\n', stderr: '' }
     if (path.includes('/issues?since=')) return { ok: true, stdout: issueList, stderr: '' }
+    if (path.startsWith('notifications?')) return { ok: true, stdout: notifications, stderr: '' }
+    if (/\/issues\/\d+$/.test(path) && argv.includes('--jq')) return { ok: true, stdout: 'I_42\n', stderr: '' }
     if (path.endsWith('/comments')) {
       return { ok: true, stdout: JSON.stringify([{ id: 1, body: renderReceipt(receipt) }]), stderr: '' }
     }
@@ -74,6 +77,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  notifications = '[]'
   runner.run = originalRun
   rmSync(tmpDir, { recursive: true, force: true })
 })
@@ -147,7 +151,7 @@ test('an ambient-only worktree resolves the repository id rather than assuming o
   ambientOnly(tmpDir)
   ingest(tmpDir)
   expect(argvs.some((a) => a[0] === 'repo' && a[1] === 'view')).toBe(true)
-  expect(Object.keys(readCursors(tmpDir).cursors)).toEqual(['R_current'])
+  expect(Object.keys(readCursors(tmpDir).cursors).sort()).toEqual(['R_current', 'mentions:R_current'])
 })
 
 test('a worktree that has opted out of ambient triggers no query', () => {
@@ -182,4 +186,37 @@ test('a worktree with no session open receives nothing', () => {
   ingest(tmpDir)
   expect(listPending(tmpDir, recipientKey('session-1'))).toHaveLength(0)
   expect(listPending(tmpDir, recipientKey('session-0'))).toHaveLength(1)
+})
+
+function mention(repoNodeId: string): string {
+  return JSON.stringify([
+    {
+      reason: 'mention',
+      updated_at: '2026-09-05T07:00:00Z',
+      subject: { title: 'Can you look at this', url: 'https://api.github.com/repos/o/r/issues/42', type: 'Issue' },
+      repository: { full_name: 'o/r', node_id: repoNodeId }
+    }
+  ])
+}
+
+test('a mention on this repository reaches every session, ahead of everything else', () => {
+  notifications = mention('R_1')
+  bindings(tmpDir, [tmpDir])
+  registerSession(tmpDir, 'session-1', tmpDir)
+  ingest(tmpDir)
+  for (const id of ['session-0', 'session-1']) {
+    const tiers = listPending(tmpDir, recipientKey(id)).map((e) => e.tier)
+    expect(tiers).toContain('mentioned')
+  }
+  const text = render(listPending(tmpDir, recipientKey('session-0')))
+  expect(text.indexOf('mentioned:')).toBeLessThan(text.indexOf('bound:'))
+  expect(text).toContain('#42 you were @mentioned: Can you look at this — https://github.com/o/r/issues/42')
+})
+
+test('a mention on some other repository is not queued here', () => {
+  // The notifications feed is account-wide.
+  notifications = mention('R_somewhere_else')
+  bindings(tmpDir, [tmpDir])
+  ingest(tmpDir)
+  expect(listPending(tmpDir, recipientKey('session-0')).map((e) => e.tier)).not.toContain('mentioned')
 })

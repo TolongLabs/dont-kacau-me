@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
 ![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/v0.4.3-informational?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.5.0-informational?style=for-the-badge)
 
 **A Claude Code plugin that stops your AI coding sessions from interrupting you.**
 
@@ -173,15 +173,16 @@ the policy half you need neither.
 
    Receipts then publish themselves. This step needs an authenticated `gh` and a GitHub remote; step 2 does not.
 
-## The five commands
+## The commands
 
-| Command                                  | When you use it                                                        |
-| ---------------------------------------- | ---------------------------------------------------------------------- |
-| `/dont-kacau-me:dkm-init`                | Once per repository, to check prerequisites and write a starter policy |
-| `/dont-kacau-me:dkm-bind 12`             | Once per worktree, to name the issue or PR its receipts belong to      |
-| `/dont-kacau-me:dkm-follow 81`           | To be told when someone else's work item changes                       |
-| `/dont-kacau-me:dkm-status`              | To see what happened overnight and every decision made for you         |
-| `/dont-kacau-me:dkm-note blocker <text>` | When the agent hits a real judgement call and should not guess         |
+| Command                                  | When you use it                                                               |
+| ---------------------------------------- | ----------------------------------------------------------------------------- |
+| `/dont-kacau-me:dkm-init`                | Once per repository, to check prerequisites and write a starter policy        |
+| `/dont-kacau-me:dkm-afk <goal>`          | When you are leaving: watch for @mentions, keep alive, split with peers, ship |
+| `/dont-kacau-me:dkm-bind 12`             | Once per worktree, to name the issue or PR its receipts belong to             |
+| `/dont-kacau-me:dkm-follow 81`           | To be told when someone else's work item changes                              |
+| `/dont-kacau-me:dkm-status`              | To see what happened overnight and every decision made for you                |
+| `/dont-kacau-me:dkm-note blocker <text>` | When the agent hits a real judgement call and should not guess                |
 
 Claude Code namespaces a plugin's commands, so every DKM command is typed as `/dont-kacau-me:<command>`, never
 `/<command>`.
@@ -189,15 +190,19 @@ Claude Code namespaces a plugin's commands, so every DKM command is typed as `/d
 Re-running `dkm-init` is also how you diagnose a repository later. It never replaces a policy that already exists unless
 you pass `--force`.
 
-The usage-limit supervisor is not a slash command; it is a process you start yourself, described next.
+The close-the-laptop path is not a slash command; it is a process you start yourself, described next.
 
 ### Surviving a usage limit
 
 A long unattended run used to end the moment your usage limit was reached. Start it under the supervisor instead:
 
 ```bash
-bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts revive "work through issue 12" -- --effort high
+bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts run "work through issue 12" -- --effort high
 ```
+
+The run is headless. It starts Claude with `--permission-mode default --permission-prompts none`, so **your policy
+answers every prompt**: what it allows goes through, anything it does not is denied with an instruction not to retry,
+and the run continues. Every decision lands in `.dkm/decisions.jsonl`.
 
 When a run stops on a limit, it reads the reset time the server reported, waits, and **resumes the same session** so the
 work continues instead of starting over. It waits; it never tries to dodge the limit. Every pause is recorded in
@@ -336,11 +341,12 @@ The subsections below stay at the system-narrative level. Implementation contrac
 
 A signal is queued only at the finest tier that claims it for one recipient and ingest.
 
-| Tier         | Covers                                                   | Delivered as                                               |
-| ------------ | -------------------------------------------------------- | ---------------------------------------------------------- |
-| **Bound**    | The work item this worktree owns                         | Receipt summary: SHAs, contract paths, checks and blockers |
-| **Followed** | Work items this session declared a dependency on         | The same receipt summary, labelled `followed`              |
-| **Ambient**  | Other issues and PRs updated since the repository cursor | Headline and URL                                           |
+| Tier          | Covers                                                         | Delivered as                                               |
+| ------------- | -------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Mentioned** | A teammate @mentioned you on an issue or PR in this repository | Headline and URL, ahead of everything else                 |
+| **Bound**     | The work item this worktree owns                               | Receipt summary: SHAs, contract paths, checks and blockers |
+| **Followed**  | Work items this session declared a dependency on               | The same receipt summary, labelled `followed`              |
+| **Ambient**   | Other issues and PRs updated since the repository cursor       | Headline and URL                                           |
 
 - The current GitHub query returns updated issues and PRs; raw commits are not an ambient signal.
 - DKM discards body fields before building a pending event.
@@ -429,13 +435,14 @@ No code path changes credentials or the account, and nothing remains active once
 `.dkm/policy.toml` is the only committed file under `.dkm/`; all other DKM state is git-ignored. Blast-radius rules run
 before the file and cannot be overridden from it. Anything unmatched defaults to the human path: `ask`.
 
-| Key or section    | Value shape                  | Controls                                      | Safety behavior                                   |
-| ----------------- | ---------------------------- | --------------------------------------------- | ------------------------------------------------- |
-| `version`         | Integer by convention        | Present in the file; the parser ignores it    | Loaded policy remains version 1                   |
-| `contractGlobs`   | Array of path globs          | Which changed paths form `contractDelta`      | Changes receipt content, not permission decisions |
-| `[[allow]].tool`  | Tool name                    | Tool eligible for a prior allow grant         | Still loses to a blast-radius trip                |
-| `[[allow]].match` | Optional substring           | Narrows the first command, path or URL input  | First matching allow rule wins                    |
-| `[[allow]].paths` | Optional array of path globs | Requires at least one candidate path to match | An outside-worktree candidate still denies        |
+| Key or section    | Value shape                      | Controls                                       | Safety behavior                                             |
+| ----------------- | -------------------------------- | ---------------------------------------------- | ----------------------------------------------------------- |
+| `version`         | Integer by convention            | Present in the file; the parser ignores it     | Loaded policy remains version 1                             |
+| `contractGlobs`   | Array of path globs              | Which changed paths form `contractDelta`       | Changes receipt content, not permission decisions           |
+| `[blast].<rule>`  | `deny`, `ask` or `off`           | What each blast-radius rule does when it trips | Nothing configured: `outside-worktree` denies, the rest ask |
+| `[[allow]].tool`  | Tool name, or `*` for every tool | Tool eligible for a prior allow grant          | Still loses to a blast-radius rule that is on               |
+| `[[allow]].match` | Optional substring               | Narrows the first command, path or URL input   | First matching allow rule wins                              |
+| `[[allow]].paths` | Optional array of path globs     | Requires at least one candidate path to match  | An outside-worktree candidate still denies                  |
 
 ## Tech stack
 

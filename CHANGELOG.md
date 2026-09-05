@@ -8,6 +8,20 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-09-05
+
+### Changed
+
+- The README, the TRD and `AGENTS.md` now describe the product 0.5.0 made: several tabs in one directory as peers, the
+  wide grant and the `[blast]` table, @mentions as the first tier, `dkm-afk` and `dkm run`. The authority principle
+  gains two clarifications: an inbound message is a task and never a grant, and the blast-radius table is a default the
+  committed policy owns. The README's table of contents linked a heading that no longer existed.
+
+### Known limitations
+
+- The six-panel comic still shows a migration waiting for the sleeping developer, which is the behaviour of a policy
+  with `data-loss` on rather than of the wide grant `dkm init` writes.
+
 ## [0.5.0] — 2026-09-05
 
 The release that makes DKM the tool it was meant to be: sessions that work the goal while you are away, with every
@@ -197,6 +211,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.5.1]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.1...v0.4.2

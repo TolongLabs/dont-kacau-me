@@ -59,7 +59,10 @@ test('a session that answers its own prompts is told the policy is not consulted
 })
 
 test('a mode that puts the question to the human is not warned about', () => {
+  // The payload carries "default" for the mode the flag calls manual. A test that only checked the
+  // alias passed while the shipped code warned in the one mode where DKM decides.
   policy()
+  expect(permissionModeHint(tmpDir, 'default')).toBe('')
   expect(permissionModeHint(tmpDir, 'manual')).toBe('')
   expect(permissionModeHint(tmpDir, 'plan')).toBe('')
 })

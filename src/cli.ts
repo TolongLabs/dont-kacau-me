@@ -50,14 +50,14 @@ function describe(item: WorkItemRef): string {
 
 function status(root: string): string {
   const binding = bindingFor(root)
-  const pending = listPending(root, recipientKey(root))
+  const pending = listPending(root, recipientKey(sessionId()))
   const decisions = readDecisions(root)
   const recent = decisions.slice(-5)
   const lines = [
     `bound     ${binding.bound === null ? '(none)' : describe(binding.bound)}`,
     `followed  ${binding.followed.length === 0 ? '(none)' : binding.followed.map(describe).join(', ')}`,
     `ambient   ${binding.ambient ? 'on' : 'off'}`,
-    `pending   ${pending.length} undelivered`,
+    `pending   ${pending.length} undelivered for this session`,
     `decisions ${decisions.length} recorded`
   ]
   if (recent.length > 0) {

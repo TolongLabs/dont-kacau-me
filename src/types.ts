@@ -130,6 +130,13 @@ export type RevivalRecord = {
   detail?: string
 }
 
+export type SessionRecord = {
+  sessionId: string
+  worktreePath: string
+  startedAt: string
+  lastSeen: string
+}
+
 export type ResumeTicket = {
   sessionId: string
   cwd: string

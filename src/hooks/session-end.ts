@@ -1,4 +1,4 @@
-import { writeResumeTicket } from '../store'
+import { unregisterSession, writeResumeTicket } from '../store'
 import { runHook } from './runtime'
 
 /**
@@ -7,6 +7,7 @@ import { runHook } from './runtime'
  * tell a usage limit from a clean exit and must not guess at one.
  */
 runHook((payload, root) => {
+  unregisterSession(root, payload.session_id)
   writeResumeTicket(root, {
     sessionId: payload.session_id,
     cwd: payload.cwd,

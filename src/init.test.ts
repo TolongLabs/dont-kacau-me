@@ -85,13 +85,12 @@ test('init reports where the policy landed', () => {
   expect(result.output).toContain('dkm-bind')
 })
 
-test('init points at a worktree, never a second session in the same directory', () => {
-  // Recipients are keyed on worktree path and draining unlinks the event, so two sessions in one
-  // directory share a queue and race for it. Telling a new user to open a second session there
-  // would be telling them to lose events.
+test('init tells the user more tabs in this directory are peers', () => {
+  // Recipients are sessions, so tabs in one directory each receive every event. Earlier versions
+  // keyed the queue on the worktree and had to warn people off exactly this.
   const { output } = runInit(tmpDir, false, CHECKS)
-  expect(output).toContain('git worktree add')
-  expect(output).toContain('race')
+  expect(output).toContain('Open more Claude Code tabs in this same directory')
+  expect(output).not.toContain('race')
 })
 
 test('a repository with no git is told to run git init', () => {

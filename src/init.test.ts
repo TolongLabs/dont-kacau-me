@@ -31,39 +31,36 @@ afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true })
 })
 
-test('the generated policy parses and grants exactly what init advertises', () => {
+test('the generated policy parses and grants what init advertises: everything inside the worktree', () => {
   // Asserted through loadPolicy and decide rather than by reading the TOML back, because a
   // generated file that only satisfies its own generator would pass while the parser rejected it.
   runInit(tmpDir, false, CHECKS)
 
   expect(verdict('Read', { file_path: join(tmpDir, 'src/a.ts') })).toBe('allow')
   expect(verdict('Bash', { command: 'bun test' })).toBe('allow')
-  expect(verdict('Bash', { command: 'bun run lint' })).toBe('allow')
   expect(verdict('Write', { file_path: join(tmpDir, 'src/a.ts') })).toBe('allow')
-  expect(verdict('Edit', { file_path: join(tmpDir, 'docs/a.md') })).toBe('allow')
+  expect(verdict('WebSearch', { query: 'anything' })).toBe('allow')
 })
 
-test('the generated policy still lets the dangerous things reach the human', () => {
+test('the wide policy switches the blast-radius rules off, as the installer chose', () => {
   runInit(tmpDir, false, CHECKS)
 
-  expect(verdict('Edit', { file_path: join(tmpDir, 'package.json') })).toBe('ask')
-  expect(verdict('Edit', { file_path: join(tmpDir, '.dkm/policy.toml') })).toBe('ask')
-  expect(verdict('Bash', { command: 'git push' })).toBe('ask')
+  expect(verdict('Edit', { file_path: join(tmpDir, 'package.json') })).toBe('allow')
+  expect(verdict('Bash', { command: 'git push origin main' })).toBe('allow')
+  expect(verdict('Bash', { command: 'rm -rf build' })).toBe('allow')
+  expect(verdict('Bash', { command: 'vercel deploy --prod' })).toBe('allow')
+})
+
+test('the one rule the wide policy leaves on still blocks writes outside the worktree', () => {
+  runInit(tmpDir, false, CHECKS)
   expect(verdict('Write', { file_path: '/etc/passwd' })).toBe('deny')
+  expect(verdict('Bash', { command: 'cat /etc/passwd' })).toBe('deny')
 })
 
-test('a command the repository does not define is not granted', () => {
-  // The scripts block has no typecheck, so granting one would be inventing a decision.
-  runInit(tmpDir, false, CHECKS)
-  expect(verdict('Bash', { command: 'bun run typecheck' })).toBe('ask')
-})
-
-test('only directories that exist are granted', () => {
+test('contract globs name only directories that exist', () => {
   const policy = suggestPolicy(tmpDir)
-  expect(policy).toContain('"src/**"')
-  expect(policy).toContain('"docs/**"')
-  expect(policy).not.toContain('"lib/**"')
-  expect(policy).not.toContain('"tests/**"')
+  expect(policy).toContain('"src/**/types.ts"')
+  expect(policy).not.toContain('"lib/**/types.ts"')
 })
 
 test('an existing policy is never replaced without --force', () => {

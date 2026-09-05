@@ -226,7 +226,7 @@ function collectRelativePaths(input: DecisionInput): string[] {
 }
 
 function ruleMatches(input: DecisionInput, rule: PolicyAllowRule): boolean {
-  if (rule.tool !== input.toolName) return false
+  if (rule.tool !== '*' && rule.tool !== input.toolName) return false
   if (rule.match !== undefined) {
     if (!getContentString(input.toolInput).includes(rule.match)) return false
   }
@@ -245,6 +245,8 @@ export function decide(
   policy: Policy
 ): { decision: PermissionDecision; rule: string; trip: BlastRadiusTrip | null } {
   for (const trip of TRIPS) {
+    const setting = policy.blast[trip]
+    if (setting === 'off') continue
     let matched = false
     if (trip === 'outside-worktree') matched = isOutsideWorktree(input)
     else if (trip === 'data-loss') matched = isDataLoss(input)
@@ -252,7 +254,7 @@ export function decide(
     else if (trip === 'egress') matched = isEgress(input)
     else if (trip === 'surface') matched = isSurface(input)
     if (matched) {
-      return { decision: trip === 'outside-worktree' ? 'deny' : 'ask', rule: `blast:${trip}`, trip }
+      return { decision: setting, rule: `blast:${trip}`, trip }
     }
   }
   for (const [i, rule] of policy.allow.entries()) {

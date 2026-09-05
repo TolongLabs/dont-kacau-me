@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { decide } from './decide'
+import { DEFAULT_BLAST } from './policy'
 import type { DecisionInput, Policy } from './types'
 
 const WORKTREE = '/home/dev/repo'
 
-const EMPTY_POLICY: Policy = { version: 1, allow: [], contractGlobs: [] }
+const EMPTY_POLICY: Policy = { version: 1, allow: [], contractGlobs: [], blast: DEFAULT_BLAST }
 
 function bash(command: string): DecisionInput {
   return { sessionId: 's1', cwd: WORKTREE, worktreePath: WORKTREE, toolName: 'Bash', toolInput: { command } }
@@ -63,7 +64,12 @@ test('surface trips ask for lockfiles, env files and package.json', () => {
 test('the grant cannot be rewritten without the human seeing it', () => {
   // A permissive allow rule must not reach .dkm/. Otherwise an agent widens its own authority by
   // editing the file that grants it, which is the one thing the authority principle forbids.
-  const permissive: Policy = { version: 1, allow: [{ tool: 'Write' }, { tool: 'Edit' }], contractGlobs: [] }
+  const permissive: Policy = {
+    version: 1,
+    allow: [{ tool: 'Write' }, { tool: 'Edit' }],
+    contractGlobs: [],
+    blast: DEFAULT_BLAST
+  }
   for (const p of ['.dkm/policy.toml', '.dkm/decisions.jsonl', '.dkm/bindings.json']) {
     expect(decide(write(`${WORKTREE}/${p}`), permissive)).toMatchObject({ decision: 'ask', trip: 'surface' })
   }
@@ -74,24 +80,34 @@ test('an ordinary source write is not a surface trip', () => {
 })
 
 test('a policy allow rule on tool alone allows', () => {
-  const policy: Policy = { version: 1, allow: [{ tool: 'Bash' }], contractGlobs: [] }
+  const policy: Policy = { version: 1, allow: [{ tool: 'Bash' }], contractGlobs: [], blast: DEFAULT_BLAST }
   expect(decide(bash('bun test'), policy)).toMatchObject({ decision: 'allow', rule: 'policy.allow[0]' })
 })
 
 test('a policy allow rule with match only allows the matching command', () => {
-  const policy: Policy = { version: 1, allow: [{ tool: 'Bash', match: 'bun test' }], contractGlobs: [] }
+  const policy: Policy = {
+    version: 1,
+    allow: [{ tool: 'Bash', match: 'bun test' }],
+    contractGlobs: [],
+    blast: DEFAULT_BLAST
+  }
   expect(decide(bash('bun test'), policy).decision).toBe('allow')
   expect(decide(bash('bun run build'), policy).decision).toBe('ask')
 })
 
 test('a policy allow rule with paths allows only matching paths', () => {
-  const policy: Policy = { version: 1, allow: [{ tool: 'Write', paths: ['src/**'] }], contractGlobs: [] }
+  const policy: Policy = {
+    version: 1,
+    allow: [{ tool: 'Write', paths: ['src/**'] }],
+    contractGlobs: [],
+    blast: DEFAULT_BLAST
+  }
   expect(decide(write(`${WORKTREE}/src/deep/a.ts`), policy).decision).toBe('allow')
   expect(decide(write(`${WORKTREE}/docs/a.md`), policy).decision).toBe('ask')
 })
 
 test('a blast-radius trip beats a policy allow rule that would otherwise match', () => {
-  const policy: Policy = { version: 1, allow: [{ tool: 'Bash' }], contractGlobs: [] }
+  const policy: Policy = { version: 1, allow: [{ tool: 'Bash' }], contractGlobs: [], blast: DEFAULT_BLAST }
   expect(decide(bash('curl https://example.com'), policy)).toMatchObject({ decision: 'ask', trip: 'egress' })
 })
 
@@ -165,4 +181,48 @@ test('a prose field whose whole value is a path is still prose', () => {
 
   const write = tool('Write', { file_path: `${WORKTREE}/src/a.ts`, content: '/etc/passwd' })
   expect(decide(write, EMPTY_POLICY).trip).toBe(null)
+})
+
+function withBlast(overrides: Partial<Policy['blast']>): Policy {
+  return { version: 1, allow: [], contractGlobs: [], blast: { ...DEFAULT_BLAST, ...overrides } }
+}
+
+test('a blast-radius rule set to off is not evaluated', () => {
+  // The grant is written and committed by the installer, so executing it is the one kind of grant
+  // DKM executes. Egress off means git push meets the allow rules like any other command.
+  const policy = withBlast({ egress: 'off' })
+  policy.allow.push({ tool: 'Bash', match: 'git push' })
+  expect(decide(bash('git push origin main'), policy).decision).toBe('allow')
+  expect(decide(bash('git push origin main'), policy).rule).toBe('policy.allow[0]')
+})
+
+test('outside-worktree can be switched off too', () => {
+  const policy = withBlast({ 'outside-worktree': 'off' })
+  policy.allow.push({ tool: 'Write' })
+  expect(decide(write('/tmp/anywhere.txt'), policy).decision).toBe('allow')
+})
+
+test('a rule set to deny denies, and one set to ask asks', () => {
+  expect(decide(bash('git push'), withBlast({ egress: 'deny' })).decision).toBe('deny')
+  expect(decide(write('/etc/passwd'), withBlast({ 'outside-worktree': 'ask' })).decision).toBe('ask')
+})
+
+test('with nothing configured the rules behave as before', () => {
+  expect(decide(write('/etc/passwd'), EMPTY_POLICY).decision).toBe('deny')
+  expect(decide(bash('git push'), EMPTY_POLICY).decision).toBe('ask')
+  expect(decide(bash('rm -rf build'), EMPTY_POLICY).decision).toBe('ask')
+})
+
+test('switching one rule off leaves the others on', () => {
+  const policy = withBlast({ egress: 'off' })
+  policy.allow.push({ tool: 'Bash' })
+  expect(decide(bash('rm -rf build'), policy).rule).toBe('blast:data-loss')
+})
+
+test('a rule with tool "*" matches every tool', () => {
+  // The wide policy dkm init writes is three lines because of this. Blast-radius still runs first.
+  const policy: Policy = { version: 1, allow: [{ tool: '*' }], contractGlobs: [], blast: DEFAULT_BLAST }
+  expect(decide(tool('WebSearch', { query: 'x' }), policy).decision).toBe('allow')
+  expect(decide(bash('bun test'), policy).decision).toBe('allow')
+  expect(decide(write('/etc/passwd'), policy).decision).toBe('deny')
 })

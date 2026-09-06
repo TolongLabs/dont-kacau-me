@@ -25,7 +25,7 @@ function defaultRunner(repoRoot: string, argv: string[], input?: string): RunRes
     cwd: repoRoot,
     encoding: 'utf8',
     shell: false,
-    timeout: 10000,
+    timeout: 5000,
     input,
     maxBuffer: 10 * 1024 * 1024
   })
@@ -268,12 +268,10 @@ export function fetchMentions(repoRoot: string, sinceIso: string): MentionEvent[
     const url = subjectUrl
       .replace(/^https:\/\/api\.github\.com\/repos\//, 'https://github.com/')
       .replace(/\/pulls\//, '/pull/')
-    // Notifications do not carry the issue/PR node id, so resolve it separately.
-    const nodeRun = runner.run(repoRoot, ['api', `repos/{owner}/{repo}/issues/${number}`, '--jq', '.node_id'])
-    if (!nodeRun.ok) continue
-    const nodeId = nodeRun.stdout.trim()
-    if (nodeId.length === 0) continue
-    out.push({ kind, nodeId, number, headline: title, url, updatedAt, repoNodeId: repoId })
+    // A notification carries no item node id. Looking one up per mention cost a network round trip
+    // each, on the hook that runs on every prompt; nothing downstream needs the real id, only a
+    // stable key, so it is derived.
+    out.push({ kind, nodeId: `${repoId}-${number}`, number, headline: title, url, updatedAt, repoNodeId: repoId })
   }
   return out
 }

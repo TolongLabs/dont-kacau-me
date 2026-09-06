@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
 ![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/v0.5.1-informational?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.5.2-informational?style=for-the-badge)
 
 **A Claude Code plugin that answers for your AI coding sessions — and keeps them working while you are away.**
 
@@ -326,6 +326,14 @@ teammates can see it without anyone being interrupted.
   for control flow.
 - **Narrow ambient feed.** Ambient ingest sees issues and PRs from the updated-items query, with no base-branch CI
   source. @mentions are not ambient; they are their own tier.
+- **Peers must share a permission mode.** Claude Code holds a message between sessions whose permission modes differ
+  until you approve it, so start every tab the same way. A tab in `manual` and a tab under
+  `--dangerously-skip-permissions` will prompt you for each message between them.
+- **You cannot @mention yourself.** GitHub does not notify people of their own comments, so a mention only reaches DKM
+  when a teammate writes it.
+- **The prompt hook never waits on the network.** Receipts and ambient updates are fetched on session start and then at
+  most once every five minutes; mentions are fetched on session start and by the watch. A hook that timed out used to
+  discard everything it had to say, including the permission-mode hint.
 
 ## Under the hood
 

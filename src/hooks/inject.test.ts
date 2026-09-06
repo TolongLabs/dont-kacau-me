@@ -151,7 +151,10 @@ test('an ambient-only worktree resolves the repository id rather than assuming o
   ambientOnly(tmpDir)
   ingest(tmpDir)
   expect(argvs.some((a) => a[0] === 'repo' && a[1] === 'view')).toBe(true)
-  expect(Object.keys(readCursors(tmpDir).cursors).sort()).toEqual(['R_current', 'mentions:R_current'])
+  const keys = Object.keys(readCursors(tmpDir).cursors)
+    .filter((k) => k.includes('R_current'))
+    .sort()
+  expect(keys).toEqual(['R_current', 'mentions:R_current'])
 })
 
 test('a worktree that has opted out of ambient triggers no query', () => {
@@ -219,4 +222,40 @@ test('a mention on some other repository is not queued here', () => {
   bindings(tmpDir, [tmpDir])
   ingest(tmpDir)
   expect(listPending(tmpDir, recipientKey('session-0')).map((e) => e.tier)).not.toContain('mentioned')
+})
+
+function repoViewCalls(): number {
+  return argvs.filter((a) => a[0] === 'repo' && a[1] === 'view').length
+}
+
+function notificationCalls(): number {
+  return argvs.filter((a) => (a[1] ?? '').startsWith('notifications?')).length
+}
+
+test('within the interval, the prompt path touches no network at all', () => {
+  // The throttle used to sit inside the repository loop, after the repository id had already
+  // been fetched: every prompt in every repository with a remote paid for one gh call, and on a
+  // slow machine the hook timed out and its output was discarded on every turn.
+  ambientOnly(tmpDir)
+  ingest(tmpDir)
+  argvs = []
+  ingest(tmpDir, 300_000)
+  expect(argvs).toEqual([])
+})
+
+test('the repository id is fetched once and cached', () => {
+  ambientOnly(tmpDir)
+  ingest(tmpDir)
+  ingest(tmpDir)
+  expect(repoViewCalls()).toBe(1)
+})
+
+test('the prompt path does not fetch mentions', () => {
+  // One more network call on the hook that runs on every prompt. A session that wants mentions
+  // live has a Monitor; SessionStart still fetches them.
+  ambientOnly(tmpDir)
+  ingest(tmpDir, 0, 8000, Date.now, false)
+  expect(notificationCalls()).toBe(0)
+  ingest(tmpDir, 0, 8000, Date.now, true)
+  expect(notificationCalls()).toBe(1)
 })

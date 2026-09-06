@@ -8,6 +8,28 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-09-05
+
+Found by the maintainer's first run as a new user.
+
+### Fixed
+
+- **The prompt hook timed out on every turn in every repository with a remote**, and the harness discarded its output,
+  which also swallowed the permission-mode and unbound hints. 0.5.0 made every session an ambient recipient, so each
+  prompt resolved the repository id over the network before the throttle ran, then fetched issues, notifications and one
+  lookup per mention; at roughly two seconds per `gh` call that passed fifteen. The throttle now runs before any
+  network, the repository id is cached, the prompt path fetches no mentions (SessionStart and the watch do), the
+  per-mention lookup is gone, `gh` calls time out at five seconds, and the prompt path refetches at most every five
+  minutes.
+- `dkm init` reported a repository with a remote as having none and told the user to add one. The check asked `gh` over
+  the network and timed out. It now asks `git` locally and distinguishes a non-GitHub remote from no remote.
+- `SessionStart` has a 20-second timeout, since its first fetch is the expensive one.
+
+### Changed
+
+- `dkm-afk` and the README say that peers must share a permission mode (Claude Code holds messages between sessions
+  whose modes differ) and that GitHub does not notify people of their own @mentions.
+
 ## [0.5.1] — 2026-09-05
 
 ### Changed
@@ -211,6 +233,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.5.2]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.2...v0.4.3

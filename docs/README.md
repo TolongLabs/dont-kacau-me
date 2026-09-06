@@ -15,82 +15,82 @@ _Kacau_ is Malay for "to disturb". The name is the product: don't bother me.
 
 > No human courier. No human decision queue. No manufactured consent.
 
-## Table of contents
+## Table of Contents
 
 <details>
   <summary>Expand</summary>
   <ol>
-    <li><a href="#what-it-does">What it does</a></li>
-    <li><a href="#quick-start">Quick start</a></li>
-    <li><a href="#which-permission-mode-to-use">Which permission mode to use</a></li>
-    <li><a href="#the-commands">The commands</a></li>
-    <li><a href="#how-it-stays-safe">How it stays safe</a></li>
-    <li><a href="#what-dkm-cannot-do">What DKM cannot do</a></li>
-    <li><a href="#under-the-hood">Under the hood</a></li>
-    <li><a href="#repository-layout">Repository layout</a></li>
-    <li><a href="#go-deeper">Go deeper</a></li>
+    <li><a href="#what-it-does">What It Does</a></li>
+    <li><a href="#quick-start">Quick Start</a></li>
+    <li><a href="#which-permission-mode-to-use">Which Permission Mode to Use</a></li>
+    <li><a href="#the-commands">The Commands</a></li>
+    <li><a href="#how-it-stays-safe">How It Stays Safe</a></li>
+    <li><a href="#what-dkm-cannot-do">What DKM Cannot Do</a></li>
+    <li><a href="#under-the-hood">Under the Hood</a></li>
+    <li><a href="#repository-layout">Repository Layout</a></li>
+    <li><a href="#go-deeper">Go Deeper</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#licence">Licence</a></li>
   </ol>
 </details>
 
-## What it does
+## What It Does
 
-- **Several tabs in one directory become peers.** They split a goal, keep themselves alive on a heartbeat and ship it
+- **Several Tabs in One Directory Become Peers.** They split a goal, keep themselves alive on a heartbeat and ship it
   while you are away.
-- **A policy you wrote answers routine permission prompts.** Every decision is logged with the rule that made it, so you
+- **A Policy You Wrote Answers Routine Permission Prompts.** Every decision is logged with the rule that made it, so you
   can read back what happened while you slept.
-- **Receipts and @mentions travel without you.** A receipt with the commit SHA, changed files and check results lands on
+- **Receipts and @mentions Travel Without You.** A receipt with the commit SHA, changed files and check results lands on
   the GitHub issue or PR, and a teammate's @mention reaches a peer ahead of everything else.
 
 If you only ever run one session at a time, and never leave it alone, you do not need DKM yet.
 
-## Quick start
+## Quick Start
 
-1. **Check the prerequisites.**
+1. **Check the Prerequisites.**
 
    - [Claude Code](https://code.claude.com/docs/en/plugins) and [Bun](https://bun.sh/)
    - An authenticated [`gh`](https://cli.github.com/) and a GitHub remote, needed only for receipts and @mentions
 
-1. **Install the plugin**, then restart Claude Code so it loads.
+1. **Install the Plugin**, then restart Claude Code so it loads.
 
    ```bash
    claude plugin marketplace add TolongLabs/dont-kacau-me
    claude plugin install dont-kacau-me@tolonglabs
    ```
 
-1. **Set up the repository.** Run `/dont-kacau-me:dkm-init`: it checks the prerequisites and writes `.dkm/policy.toml`,
+1. **Set up the Repository.** Run `/dont-kacau-me:dkm-init`: it checks the prerequisites and writes `.dkm/policy.toml`,
    a wide grant. That file is your grant, so read it, delete anything you did not mean to grant and commit it.
 
    The prompts it covers stop arriving from here on, and this half works alone in one session with no GitHub issue. To
    publish receipts to a work item, bind once from any tab with `/dont-kacau-me:dkm-bind <number>`; that step needs an
    authenticated `gh` and a GitHub remote, and nothing else does.
 
-1. **Open more tabs** in the same directory, each started the same way. Every tab is a peer that gets its own copy of
+1. **Open More Tabs** in the same directory, each started the same way. Every tab is a peer that gets its own copy of
    every event. A second git worktree is for a second branch; a second session does not need one.
 
 1. **Leave.** Run `/dont-kacau-me:dkm-afk <goal>` in one tab. It finds the peer tabs, starts a watch for every new
    @mention of you on the repository, creates a heartbeat so nothing stalls, splits the work and ships the goal.
 
-1. **Come back.** Run `/dont-kacau-me:dkm-status` to see what happened overnight and every decision made for you.
+1. **Come Back.** Run `/dont-kacau-me:dkm-status` to see what happened overnight and every decision made for you.
 
 The plugin's hooks run in every repository on your machine and do nothing in one until `dkm-init` or `dkm-bind` has
 created `.dkm/` there; a session in any other repository sees one line saying so.
 
-## Which permission mode to use
+## Which Permission Mode to Use
 
-| You start Claude Code with                 | What works                                                                         | What you give up                                                                  |
+| You Start Claude Code With                 | What Works                                                                         | What You Give Up                                                                  |
 | ------------------------------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `--permission-mode manual`                 | Everything: peers, @mentions, receipts, the policy deciding and logging, the fence | Nothing; prompts the policy does not cover still reach you                        |
 | `--dangerously-skip-permissions` or `auto` | Peers, @mentions, receipts and `dkm-afk`                                           | The deciding and the log, and the fence: no decision is made or recorded          |
 | Different modes in different tabs          | Each tab on its own                                                                | Free messaging: Claude Code holds each message until you approve it, so never mix |
 
-**DKM only decides when Claude Code asks it to.** A session in a non-asking mode is told so on its first prompt and
+**DKM Only Decides When Claude Code Asks It To.** A session in a non-asking mode is told so on its first prompt and
 asked to tell you; [the policy file](policy.md) has the full comparison.
 
-## The commands
+## The Commands
 
-| Command                                  | When you use it                                                               |
+| Command                                  | When You Use It                                                               |
 | ---------------------------------------- | ----------------------------------------------------------------------------- |
 | `/dont-kacau-me:dkm-init`                | Once per repository, to check prerequisites and write a starter policy        |
 | `/dont-kacau-me:dkm-afk <goal>`          | When you are leaving: watch for @mentions, keep alive, split with peers, ship |
@@ -114,13 +114,13 @@ bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts run "work through issue 12" -- --effort h
 Your policy answers every prompt, and the run resumes the same session after a usage-limit wait. See
 [`dkm run`](scenarios.md#dkm-run-a-run-that-outlives-its-usage-limit) for the full behaviour.
 
-## How it stays safe
+## How It Stays Safe
 
 > Auto-answering may **execute a decision you already made**. It must never **invent one**.
 
 Five blast-radius rules run **before** your allowances:
 
-| If the action would…                                 | Rule               | The grant `dkm init` writes |
+| If the Action Would…                                 | Rule               | The Grant `dkm init` Writes |
 | ---------------------------------------------------- | ------------------ | --------------------------- |
 | Delete data, drop a column, or write a migration     | `data-loss`        | off                         |
 | Post, publish, deploy, send, or open a network write | `egress`           | off                         |
@@ -135,51 +135,51 @@ the defaults, the recognised inputs and every key are in [the policy file](polic
 
 ![Six-panel comic: separate worktrees finish at 3am, manual copying loses provenance, the Stop hook writes a measured receipt, a teammate reads it, policy clears routine prompts, and a database migration waits for the sleeping developer](assets/dkm-comic.png)
 
-## What DKM cannot do
+## What DKM Cannot Do
 
-### Limits you will notice
+### Limits You Will Notice
 
-- **A non-asking permission mode bypasses the policy entirely.** `--dangerously-skip-permissions` and any
+- **A Non-Asking Permission Mode Bypasses the Policy Entirely.** `--dangerously-skip-permissions` and any
   `--permission-mode` that answers its own prompts never emit `PermissionRequest`, so no decision is made or logged. A
   session in one is told so on its first prompt and asked to tell you; everything but the deciding still works.
-- **Peers must share a permission mode.** Claude Code holds a message between sessions whose permission modes differ
+- **Peers Must Share a Permission Mode.** Claude Code holds a message between sessions whose permission modes differ
   until you approve it, so start every tab the same way. A tab in `manual` and a tab under
   `--dangerously-skip-permissions` will prompt you for each message between them.
-- **You cannot @mention yourself.** GitHub does not notify people of their own comments, so a mention only reaches DKM
+- **You Cannot @mention Yourself.** GitHub does not notify people of their own comments, so a mention only reaches DKM
   when a teammate writes it.
-- **Only a path-shaped Bash token can trip the fence, and prose that holds one still does.** A token is resolved only
+- **Only a Path-Shaped Bash Token Can Trip the Fence, and Prose That Holds One Still Does.** A token is resolved only
   when it is absolute, starts with `~` or climbs through `..`, so `//` in a PR body no longer denies the PR, but
   `/etc/passwd` inside a heredoc still does. Claude Code's own `<tmpdir>/claude-*` scratch is inside the fence.
-- **No live mid-turn delivery of receipts.** The mention watch is live — `dkm mentions --watch` prints each new @mention
+- **No Live Mid-Turn Delivery of Receipts.** The mention watch is live — `dkm mentions --watch` prints each new @mention
   as a poll sees it — but a session still learns about receipts when it starts or receives a prompt, because ingest is a
   cursored pull on injection hooks.
-- **The prompt hook never waits on the network.** Receipts and ambient updates are fetched on session start and then at
+- **The Prompt Hook Never Waits on the Network.** Receipts and ambient updates are fetched on session start and then at
   most once every five minutes; mentions are fetched on session start and by the watch. A hook that timed out used to
   discard everything it had to say, including the permission-mode hint.
 
-### Limits a reviewer should know
+### Limits a Reviewer Should Know
 
 <details>
-<summary><b>Seven internal limits</b></summary>
+<summary><b>Seven Internal Limits</b></summary>
 
-- **No cross-machine propagation beyond GitHub.** v1 uses one GitHub comment per work item and each checkout's local
+- **No Cross-Machine Propagation Beyond GitHub.** v1 uses one GitHub comment per work item and each checkout's local
   `.dkm/` state. Reaching a machine beyond what the repository carries is a v3 concern.
-- **No inbound consent path.** Another Claude session cannot approve a prompt, and a relayed approval is untrusted.
+- **No Inbound Consent Path.** Another Claude session cannot approve a prompt, and a relayed approval is untrusted.
   `decide()` accepts only permission input and policy, importing neither the pending store nor the GitHub client.
-- **No learning precedent store yet.** v1 authority comes from human-written, committed policy, not accumulated
+- **No Learning Precedent Store Yet.** v1 authority comes from human-written, committed policy, not accumulated
   inference or precedent.
-- **No delivery receipt.** A queued event is removed when a session drains it. Nothing records whether the model acted,
+- **No Delivery Receipt.** A queued event is removed when a session drains it. Nothing records whether the model acted,
   so an ignored injected delta looks identical to one it used.
-- **No automatic stale-head check.** Ingest does not compare a publisher's observed SHA with the current remote head
+- **No Automatic Stale-Head Check.** Ingest does not compare a publisher's observed SHA with the current remote head
   before rendering the receipt.
-- **No enforced hop budget.** `rootId` and `hops` are written and shape-checked but never incremented, rejected or used
+- **No Enforced Hop Budget.** `rootId` and `hops` are written and shape-checked but never incremented, rejected or used
   for control flow.
-- **Narrow ambient feed.** Ambient ingest sees issues and PRs from the updated-items query, with no base-branch CI
+- **Narrow Ambient Feed.** Ambient ingest sees issues and PRs from the updated-items query, with no base-branch CI
   source. @mentions are not ambient; they are their own tier.
 
 </details>
 
-## Under the hood
+## Under the Hood
 
 DKM coordinates sessions through Claude Code hooks and has no daemon: hook-driven receipt, ingest and permission work
 never calls a model, and the optional usage-limit supervisor is a foreground process. Implementation contracts, schemas
@@ -192,9 +192,9 @@ And the path one receipt takes, from the turn that produced it to the session th
 ![Receipt flow: session A finishes a turn, the Stop hook writes a baseline or tracked delta, and session B pulls that receipt context on its next start or prompt](assets/receipt-flow.svg)
 
 <details>
-<summary><b>The hook lifecycle</b></summary>
+<summary><b>The Hook Lifecycle</b></summary>
 
-| Hook event          | DKM action                                                                | Observable result                                                       |
+| Hook Event          | DKM Action                                                                | Observable Result                                                       |
 | ------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `Stop`              | Touch the session, then measure a bound worktree                          | Update one receipt only after a tracked delta                           |
 | `SessionStart`      | Register the session, pull repository updates, drain this session's queue | Inject context and the binding hint; one line if DKM is not set up here |
@@ -211,13 +211,13 @@ And the path one receipt takes, from the turn that produced it to the session th
 </details>
 
 <details>
-<summary><b>Receipt delivery and tracking</b></summary>
+<summary><b>Receipt Delivery and Tracking</b></summary>
 
 A signal is queued only at the finest tier that claims it for one recipient and ingest. A recipient is a session, not a
 worktree: every tab open in the directory gets its own copy of every event, and a worktree with no session open receives
 nothing.
 
-| Tier          | Covers                                                         | Delivered as                                               |
+| Tier          | Covers                                                         | Delivered As                                               |
 | ------------- | -------------------------------------------------------------- | ---------------------------------------------------------- |
 | **Mentioned** | A teammate @mentioned you on an issue or PR in this repository | Headline and URL, ahead of everything else                 |
 | **Bound**     | The work item this worktree owns                               | Receipt summary: SHAs, contract paths, checks and blockers |
@@ -231,13 +231,13 @@ nothing.
 </details>
 
 <details>
-<summary><b>The receipt schema</b></summary>
+<summary><b>The Receipt Schema</b></summary>
 
 A handoff pasted into another session is prose that loses the commit it was true at. DKM instead edits one GitHub
 comment per work item in place, so it never becomes a wall of noise, and labels every field by how much you can trust
 it:
 
-| Kind           | Where it came from                    | What you may do with it               |
+| Kind           | Where It Came From                    | What You May Do With It               |
 | -------------- | ------------------------------------- | ------------------------------------- |
 | **measured**   | `git` and `gh`, so an actual fact     | Act on it                             |
 | **reported**   | The agent's claim about its own state | Route it, never treat it as repo fact |
@@ -265,7 +265,7 @@ injection. The injected warning tells the session to re-read before acting if th
 </details>
 
 <details>
-<summary><b>Tech stack</b></summary>
+<summary><b>Tech Stack</b></summary>
 
 | Concern                     | Technology                           | Role                                                                     |
 | --------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
@@ -280,10 +280,10 @@ injection. The injected warning tells the session to re-read before acting if th
 
 </details>
 
-## Repository layout
+## Repository Layout
 
 <details>
-<summary><b>Every file and what it holds</b></summary>
+<summary><b>Every File and What It Holds</b></summary>
 
 ```text
 .claude-plugin/plugin.json       # plugin manifest
@@ -344,7 +344,7 @@ test/
 
 </details>
 
-## Go deeper
+## Go Deeper
 
 | Read                                           | When                                                          |
 | ---------------------------------------------- | ------------------------------------------------------------- |

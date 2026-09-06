@@ -1,4 +1,4 @@
-## What this changes
+## What This Changes
 
 <!-- Lead with what is different now. One or two sentences. -->
 
@@ -14,7 +14,7 @@
 
 <!-- Name the mutations you ran and confirm they were caught. A test that has never been seen to fail is decoration. -->
 
-## If behaviour changed
+## If Behaviour Changed
 
 - [ ] `docs/TRD.md` matches the new behaviour
 - [ ] `docs/README.md` matches it too, wherever it described the same thing

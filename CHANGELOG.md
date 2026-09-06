@@ -12,7 +12,7 @@ those are called out under **Changed** with the word **Breaking**.
 
 ### Fixed
 
-- **Command patterns no longer match prose.** `money`, `egress` and the `rm`/SQL half of `data-loss` are matched only
+- **Command Patterns No Longer Match Prose.** `money`, `egress` and the `rm`/SQL half of `data-loss` are matched only
   inside a `Bash` command. A file body that mentioned `deploy`, a todo naming `git push` or a note containing
   `delete from` used to return `ask`, taking back a prompt the policy had granted away. Closes #29.
 
@@ -27,14 +27,14 @@ Found by the maintainer's second run as a new user, in an AFK goal that shipped 
 
 ### Fixed
 
-- **The outside-worktree fence denied `gh pr create`** because the PR body's TypeScript sample held `//`, which the
+- **The Outside-Worktree Fence Denied `gh pr create`** because the PR body's TypeScript sample held `//`, which the
   token scan resolved to the filesystem root, and denied a peer reading its own background-task output under
   `/tmp/claude-*`. Only a token shaped like a path is resolved now — absolute, `~`-relative or through `..` — and the
   harness's own scratch directory is inside the fence. `~` used to resolve under the worktree and slipped past it.
-- **The permission-mode warning could never appear.** It was emitted on `SessionStart`, whose payload has no
+- **The Permission-Mode Warning Could Never Appear.** It was emitted on `SessionStart`, whose payload has no
   `permission_mode`. It is said once per session on the first prompt, where the payload carries the mode, and is
   addressed to the model so the human hears it.
-- **Hooks did work in repositories nobody set DKM up in.** They ran in every git repository on the machine, spent
+- **Hooks Did Work in Repositories Nobody Set DKM up In.** They ran in every git repository on the machine, spent
   seconds on GitHub on the first prompt, wrote session records, and in an asking mode fenced the worktree with a policy
   that did not exist. Every hook is now a no-op until `.dkm/` exists; `SessionStart` prints one line naming `dkm-init`
   and `PermissionRequest` emits `{}` without a record.
@@ -49,7 +49,7 @@ Found by the maintainer's first run as a new user.
 
 ### Fixed
 
-- **The prompt hook timed out on every turn in every repository with a remote**, and the harness discarded its output,
+- **The Prompt Hook Timed Out on Every Turn in Every Repository With a Remote**, and the harness discarded its output,
   which also swallowed the permission-mode and unbound hints. 0.5.0 made every session an ambient recipient, so each
   prompt resolved the repository id over the network before the throttle ran, then fetched issues, notifications and one
   lookup per mention; at roughly two seconds per `gh` call that passed fifteen. The throttle now runs before any
@@ -74,7 +74,7 @@ Found by the maintainer's first run as a new user.
   gains two clarifications: an inbound message is a task and never a grant, and the blast-radius table is a default the
   committed policy owns. The README's table of contents linked a heading that no longer existed.
 
-### Known limitations
+### Known Limitations
 
 - The six-panel comic still shows a migration waiting for the sleeping developer, which is the behaviour of a policy
   with `data-loss` on rather than of the wide grant `dkm init` writes.
@@ -86,12 +86,12 @@ decision logged. **Breaking** in one place, noted under Changed.
 
 ### Added
 
-- **`[blast]` in the policy.** Each blast-radius rule can be set to `deny`, `ask` or `off`, `outside-worktree` included.
+- **`[blast]` in the Policy.** Each blast-radius rule can be set to `deny`, `ask` or `off`, `outside-worktree` included.
   A misspelt trip or setting is ignored, never guessed at. Nothing configured behaves as before.
 - **`tool = "*"`** in an allow rule matches every tool.
-- **`dkm init` writes the wide grant by default**: every rule off except `outside-worktree`, which is left on and one
+- **`dkm init` Writes the Wide Grant by Default**: every rule off except `outside-worktree`, which is left on and one
   word from off so the reader sees the choice.
-- **Sessions are the recipients.** Three tabs open in one directory are three peers, each receiving every event.
+- **Sessions Are the Recipients.** Three tabs open in one directory are three peers, each receiving every event.
   Sessions register at start, are touched on every prompt and every finished turn, are removed at end with their queue,
   and are pruned after 48 hours if they crashed.
 - **@mentions.** A teammate calling you out on this repository is its own tier, delivered ahead of everything else, to
@@ -161,7 +161,7 @@ decision logged. **Breaking** in one place, noted under Changed.
 
 ### Fixed
 
-- **Blast-radius rules read paths from path-designating fields rather than from prose.** `outside-worktree` walked every
+- **Blast-Radius Rules Read Paths From Path-Designating Fields Rather Than From Prose.** `outside-worktree` walked every
   string in a payload and split it on whitespace, so a `WebSearch` for `/etc/hosts`, a todo mentioning `/usr/local` and
   an `AskUserQuestion` offering `/dkm-init` were all denied. It is the one trip that returns `deny`, so those calls
   failed outright with no human fallback, and it could deny `AskUserQuestion` itself. `Bash` still has its whole command
@@ -180,7 +180,7 @@ decision logged. **Breaking** in one place, noted under Changed.
 - The commands table no longer lists `dkm revive` as though it were typeable. There is no `dkm` binary; the supervisor
   is started as `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts revive`, as the section below the table already showed.
 
-### Known limitations
+### Known Limitations
 
 - `money`, `egress` and part of `data-loss` still match command patterns anywhere in a payload, so text containing
   `deploy` or `delete from` causes a redundant prompt. Each returns `ask`, so the cost is a prompt rather than a failure
@@ -214,7 +214,7 @@ contracts at once.
 
 ### Added
 
-- **Surviving a usage limit.** `revive` supervises a run: after a recognised limit, it uses the reported reset when
+- **Surviving a Usage Limit.** `revive` supervises a run: after a recognised limit, it uses the reported reset when
   usable, caps one wait at six hours and otherwise applies exponential backoff. It resumes the reported session ID;
   waits and terminal outcomes are recorded in `.dkm/revivals.jsonl`
 - A `SessionEnd` hook that records which session ended and the reason the harness gave. The current supervisor obtains
@@ -228,7 +228,7 @@ contracts at once.
 
 ### Fixed
 
-- **Breaking, and the reason for this release.** `PermissionRequest` emitted a payload shape the harness does not
+- **Breaking, and the Reason for This Release.** `PermissionRequest` emitted a payload shape the harness does not
   recognise. Because an unrecognised payload is read as a _hook failure_, every `allow` became a **deny**: installing
   DKM made a session strictly worse than not installing it, and the documented "fails open to `ask`" was false. The
   correct shape nests `hookEventName` and `decision.behavior`; there is no wire form for `ask`, and emitting `{}` is
@@ -249,7 +249,7 @@ contracts at once.
   `parseReceipt()` reads the _first_ fenced JSON block, and the hop budget that "never republishes a relayed event" does
   not exist — `rootId` and `hops` are written but never read
 
-### Known limitations
+### Known Limitations
 
 - A queued event is removed when a session drains it. Nothing records whether the model acted on it, so an injected
   delta the agent ignored looks identical to one it used

@@ -1,47 +1,47 @@
 # PRODUCT.md
 
-**Who DKM is for and why it exists.** Everything downstream cites this file.
+**Who DKM Is for and Why It Exists.** Everything downstream cites this file.
 
 Contents:
 
-1. [The user](#the-user)
-1. [The problem](#the-problem)
-1. [Why this is possible now](#why-this-is-possible-now)
-1. [The moment that sells it](#the-moment-that-sells-it)
-1. [What DKM refuses to do](#what-dkm-refuses-to-do)
-1. [Scope ladder](#scope-ladder)
-1. [Who this is not for](#who-this-is-not-for)
+1. [The User](#the-user)
+1. [The Problem](#the-problem)
+1. [Why This Is Possible Now](#why-this-is-possible-now)
+1. [The Moment That Sells It](#the-moment-that-sells-it)
+1. [What DKM Refuses to Do](#what-dkm-refuses-to-do)
+1. [Scope Ladder](#scope-ladder)
+1. [Who This Is Not For](#who-this-is-not-for)
 
-## The user
+## The User
 
-**Primary: one developer running two or more Claude Code sessions in git worktrees on the same repository.** They get
+**Primary: One Developer Running Two or More Claude Code Sessions in Git Worktrees on the Same Repository.** They get
 value on day one with nobody else adopting anything, because their own sessions are already strangers to each other.
 
-**Secondary: a team of two to five developers who each work that way.** Cross-developer propagation is where DKM does
+**Secondary: A Team of Two to Five Developers Who Each Work That Way.** Cross-developer propagation is where DKM does
 something nothing else does, but it is an expansion of the single-player case, never a precondition for it.
 
 The name is the promise. _Kacau_ is Malay for disturb. The product's success metric is **interrupts avoided**, not
 messages delivered.
 
-## The problem
+## The Problem
 
 Two costs fall on the human, and both scale with how well the agents work.
 
-**Courier duty.** An agent finishes. Its developer summarises that by hand for teammates, and pastes teammates' progress
+**Courier Duty.** An agent finishes. Its developer summarises that by hand for teammates, and pastes teammates' progress
 back into their own agents. Every hop loses provenance. By the time a fact reaches a second agent it is:
 
 - prose
 - detached from the commit it was true at
 - no longer checkable
 
-**Decision queue.** Sessions pause for the human. Three agents blocking on one person serialises all of them on that
+**Decision Queue.** Sessions pause for the human. Three agents blocking on one person serialises all of them on that
 person's attention, and the person becomes the slowest component in their own workflow. Worse, the human is often not
 adding judgement — many blocking questions are lookups, or applications of a rule the human already wrote down.
 
 The unifying observation: **the human was never only the decider, they were the coordination point.** Removing them
 without replacing coordination produces divergence, faster. That is why DKM ships provenance before it ships autonomy.
 
-## Why this is possible now
+## Why This Is Possible Now
 
 Claude Code exposes the lifecycle events DKM registers in `hooks/hooks.json`:
 
@@ -53,7 +53,7 @@ Claude Code exposes the lifecycle events DKM registers in `hooks/hooks.json`:
 DKM binds a worktree explicitly through `/dont-kacau-me:dkm-bind`; it does not register the provider-style
 `WorktreeCreate` or `WorktreeRemove` events.
 
-## The moment that sells it
+## The Moment That Sells It
 
 Agent A changes an API on PR #81 and stops. On a later ingest, agent B can receive the receipt's contract delta and
 **the SHA it was observed at** while working in another worktree, possibly on another developer's machine. Both humans
@@ -64,7 +64,7 @@ why. The fourth touched a migration, so it waited.
 
 Nobody was kacau'd. Nothing was invented.
 
-## What DKM refuses to do
+## What DKM Refuses to Do
 
 The product has one hard boundary, and it is worth stating as a feature rather than a limitation.
 
@@ -77,7 +77,7 @@ nor the GitHub client.
 This is why DKM can be aggressive about deciding without being reckless. It is executing a policy its installer wrote,
 in that installer's own sessions, and it writes down every call it makes.
 
-## Scope ladder
+## Scope Ladder
 
 - **v1** —
   - Receipts
@@ -89,7 +89,7 @@ in that installer's own sessions, and it writes down every call it makes.
 
 v1 is the whole product for one developer with several worktrees. Everything above it is an expansion.
 
-## Who this is not for
+## Who This Is Not For
 
 - A developer running a single Claude Code session. There is nothing to coordinate
 - A team that only synchronises at PR review. For them this genuinely is `gh notify` plus a Slack channel

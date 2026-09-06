@@ -9,7 +9,7 @@ The human is about to leave. The goal is: **$ARGUMENTS**
 Do the following, in order, and then start working. The human cannot see command output, so restate anything they need
 in your reply.
 
-## 1. Find your peers
+## 1. Find Your Peers
 
 Call `ListAgents`. Every other local Claude Code session in this same directory is a peer working on the same goal. If
 there are none, you are working alone and that is fine.
@@ -35,14 +35,14 @@ the human is away and it is queued.
 If the command exits at once saying `gh` is not authenticated or there is no GitHub remote, say so in one line and skip
 this step; nothing else depends on it.
 
-## 3. Keep yourself alive
+## 3. Keep Yourself Alive
 
 Create one `CronCreate` job on `7,37 * * * *` with this prompt:
 `DKM heartbeat: check whether the goal is shipped. If not, continue working on it. If a usage limit interrupted you, pick up where you left off.`
 Check `CronList` first and do not create a second one if a DKM heartbeat already exists. It lives for this session and
 expires after seven days; tell the human that in your reply.
 
-## 4. Split the work
+## 4. Split the Work
 
 If you have peers, message each one with `SendMessage`: the goal, which part you are taking, and which part you suggest
 they take. Prefer splitting by file or by feature so two peers never edit the same file. Do not wait for replies before
@@ -53,7 +53,7 @@ starting.
 Work until the goal is met. Commit as you go with clear messages. When you finish, record it:
 `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts note Shipped: <one line on what landed and where>`.
 
-## The rules while the human is away
+## The Rules While the Human Is Away
 
 - Decide. Do not ask. If two designs are viable, pick the simpler one and note the choice with
   `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts note <what you chose and why>`.

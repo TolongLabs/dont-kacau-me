@@ -6,7 +6,7 @@ allowed-tools: Bash(bun:*)
 
 Run: `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts init $1`
 
-**The human cannot see that command's output.** The harness collapses it to a single line, so anything you do not put in
+**The Human Cannot See That Command's Output.** The harness collapses it to a single line, so anything you do not put in
 your own reply is lost, and this is the one command whose whole value is what it prints. Write the following into your
 reply as text:
 

@@ -1,9 +1,9 @@
-# The policy file
+# The Policy File
 
 `.dkm/policy.toml` is the grant DKM executes: it answers permission prompts with the decisions you recorded, and never
 invents one. It is the only file under `.dkm/` that is committed; all other DKM state is git-ignored.
 
-## What dkm init writes
+## What dkm init Writes
 
 `dkm init` writes a deliberately wide grant: every blast-radius rule `off` except `outside-worktree`, one allow rule
 covering every tool, and a `contractGlobs` list built from the `src`, `lib` and `app` directories present in the
@@ -37,13 +37,13 @@ An `[[allow]]` rule is a decision you made in advance: _running tests is fine, e
 the prompts it covers stop reaching you. Read the file, delete anything you did not mean to grant and commit it; never
 copy a policy whose authority you do not intend to hand over.
 
-## Compared with --dangerously-skip-permissions
+## Compared With --dangerously-skip-permissions
 
 The flag solves the same annoyance by removing the question rather than answering it, and a lot of people running
 several sessions already use it. The default grant `dkm init` writes answers what that flag would; what stays different
 is the record, the receipts and the one boundary that stops an agent writing somewhere you cannot see:
 
-|                                           | `--dangerously-skip-permissions` | A DKM policy                                             |
+|                                           | `--dangerously-skip-permissions` | A DKM Policy                                             |
 | ----------------------------------------- | -------------------------------- | -------------------------------------------------------- |
 | Routine prompts                           | gone                             | gone                                                     |
 | `rm -rf`, `git push`, a migration, `.env` | **also gone**                    | gone under the default grant; any rule can be left on    |
@@ -51,7 +51,7 @@ is the record, the receipts and the one boundary that stops an agent writing som
 | What was decided while you slept          | nothing recorded                 | every decision, with the rule that made it               |
 | What lands on the work item               | nothing                          | a receipt with SHAs, changed paths and check results     |
 
-**DKM only decides when Claude Code asks it to.** A session that answers its own prompts never sends DKM the question,
+**DKM Only Decides When Claude Code Asks It To.** A session that answers its own prompts never sends DKM the question,
 so a committed policy sits unused. That covers `--dangerously-skip-permissions` and any non-asking `--permission-mode`,
 including one set as `permissions.defaultMode` in your settings, which applies to every session you start.
 
@@ -59,15 +59,15 @@ A session in one of those modes is told so on its first prompt and asked to tell
 that is working. Peers, @mentions, receipts and `dkm-afk` work in every mode; only the deciding and the log need an
 asking one.
 
-**The default grant is wide. The difference from skipping permissions is the log, the receipts and the boundary.**
+**The Default Grant Is Wide. The Difference From Skipping Permissions Is the Log, the Receipts and the Boundary.**
 
-## Blast-radius rules
+## Blast-Radius Rules
 
 Five blast-radius rules run **before** your allow rules. Each is a setting in `[blast]` set to `deny`, `ask` or `off`,
 and a rule set to `off` is not evaluated at all. Unconfigured, `outside-worktree` denies while the rest ask; anything
 unmatched defaults to the human path: `ask`.
 
-| If the action would…                                 | Rule               | The grant `dkm init` writes |
+| If the Action Would…                                 | Rule               | The Grant `dkm init` Writes |
 | ---------------------------------------------------- | ------------------ | --------------------------- |
 | Delete data, drop a column, or write a migration     | `data-loss`        | off                         |
 | Post, publish, deploy, send, or open a network write | `egress`           | off                         |
@@ -78,7 +78,7 @@ unmatched defaults to the human path: `ask`.
 
 The same rules as the recognised inputs the evaluator sees:
 
-| Recognised input                                                           | Result                                                 |
+| Recognised Input                                                           | Result                                                 |
 | -------------------------------------------------------------------------- | ------------------------------------------------------ |
 | A path outside the session worktree                                        | the `outside-worktree` setting — `deny` unconfigured   |
 | Recursive forced removal, destructive SQL or a `migrations`/`drizzle` path | the `data-loss` setting — `ask` unconfigured           |
@@ -96,7 +96,7 @@ visible rather than inherited; switch any rule back to `ask` or `deny` in `[blas
 
 Every key and section the parser accepts:
 
-| Key or section    | Value shape                      | Controls                                       | Safety behavior                                                  |
+| Key or Section    | Value Shape                      | Controls                                       | Safety Behavior                                                  |
 | ----------------- | -------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------- |
 | `version`         | Integer by convention            | Present in the file; the parser ignores it     | Loaded policy remains version 1                                  |
 | `contractGlobs`   | Array of path globs              | Which changed paths form `contractDelta`       | Changes receipt content, not permission decisions                |
@@ -105,7 +105,7 @@ Every key and section the parser accepts:
 | `[[allow]].match` | Optional substring               | Narrows the first command, path or URL input   | First matching allow rule wins                                   |
 | `[[allow]].paths` | Optional array of path globs     | Requires at least one candidate path to match  | An outside-worktree candidate still denies while that rule is on |
 
-## How a decision is made
+## How a Decision Is Made
 
 > Auto-answering may **execute an existing decision**. It must never **manufacture intent or consent**.
 

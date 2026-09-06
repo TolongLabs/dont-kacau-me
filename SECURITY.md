@@ -1,27 +1,27 @@
-# Security policy
+# Security Policy
 
-## Reporting a vulnerability
+## Reporting a Vulnerability
 
-**Do not open a public issue for a security report.** Use GitHub's private vulnerability reporting on this repository:
+**Do Not Open a Public Issue for a Security Report.** Use GitHub's private vulnerability reporting on this repository:
 **Security → Report a vulnerability**. That opens a private thread visible only to the maintainers.
 
 Expect an acknowledgement within three working days and an assessment within seven.
 
-## What is in scope
+## What Is in Scope
 
 DKM answers permission prompts on its installer's behalf and publishes to GitHub, so the interesting failures are about
 authority and disclosure rather than memory safety:
 
-- **Consent laundering.** Any inbound-content path into `decide()`. The current engine accepts only `DecisionInput` and
+- **Consent Laundering.** Any inbound-content path into `decide()`. The current engine accepts only `DecisionInput` and
   `Policy`
-- **Escaping the policy.** A call matching a predicate in `src/decide.ts` that does not receive its documented `ask` or
+- **Escaping the Policy.** A call matching a predicate in `src/decide.ts` that does not receive its documented `ask` or
   `deny` result
-- **Disclosure through a receipt.** Any automatically sourced content outside the fields constructed in
+- **Disclosure Through a Receipt.** Any automatically sourced content outside the fields constructed in
   `src/hooks/stop.ts`. Narrative and blockers are publishable only after explicit CLI report commands; hooks do not read
   transcripts or unrestricted tool output into them
-- **A decision that is not logged.** Every autonomous answer must be in `.dkm/decisions.jsonl` before it is returned
+- **A Decision That Is Not Logged.** Every autonomous answer must be in `.dkm/decisions.jsonl` before it is returned
 
-## What is out of scope
+## What Is Out of Scope
 
 - The behaviour of Claude Code itself. Report those to Anthropic
 - A policy that grants more than its author intended. `.dkm/policy.toml` is the human's grant, and DKM executes it as
@@ -29,7 +29,7 @@ authority and disclosure rather than memory safety:
 - Anything requiring an attacker who can already write to your checkout. At that point they can edit the policy, and
   DKM's guarantees do not survive an untrusted local filesystem
 
-## The property that matters most
+## The Property That Matters Most
 
 > Auto-answering may execute an existing decision. It must never manufacture intent or consent.
 

@@ -1,16 +1,16 @@
 # PRD.md
 
-**What DKM does.** Requirements and acceptance criteria. Cites [`PRODUCT.md`](PRODUCT.md); implemented per
+**What DKM Does.** Requirements and acceptance criteria. Cites [`PRODUCT.md`](PRODUCT.md); implemented per
 [`TRD.md`](TRD.md).
 
 Contents:
 
-1. [User stories](#user-stories)
-1. [Functional requirements](#functional-requirements)
-1. [Non-functional requirements](#non-functional-requirements)
-1. [Out of scope](#out-of-scope)
+1. [User Stories](#user-stories)
+1. [Functional Requirements](#functional-requirements)
+1. [Non-Functional Requirements](#non-functional-requirements)
+1. [Out of Scope](#out-of-scope)
 
-## User stories
+## User Stories
 
 - **US-1.** As a developer with several worktrees, I bind each session to a work item once, and never hand-summarise its
   progress again.
@@ -21,7 +21,7 @@ Contents:
 - **US-4.** As a teammate, I see one comment per work item that tells me what actually changed, with the agent's
   opinions visibly separated from the measured facts.
 
-## Functional requirements
+## Functional Requirements
 
 | ID             | Requirement                                                                                                           | Acceptance                                                                                   |
 | -------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -34,10 +34,10 @@ Contents:
 | **FR-AMBIENT** | Treat updated issues and PRs not claimed as bound or followed as ambient                                              | Narrow GitHub results to `AmbientEvent` before constructing `PendingEvent`                   |
 | **FR-REVIVE**  | Treat a recognised usage limit as a pause, then resume the reported session after the computed wait                   | Never replay the original prompt after a session ID exists; stop on a genuine error          |
 
-**Ambient excludes raw commits deliberately.** A publisher's receipt captures its current head SHA. Ingest has no
+**Ambient Excludes Raw Commits Deliberately.** A publisher's receipt captures its current head SHA. Ingest has no
 repository-wide commit query.
 
-## Non-functional requirements
+## Non-Functional Requirements
 
 - **NFR-AUTH** — `decide()` remains a pure function of permission input and policy, with no store, GitHub or hook
   imports
@@ -53,15 +53,15 @@ repository-wide commit query.
 - **NFR-WAIT** — The supervisor derives its wait from the reported reset when usable, caps one wait at six hours and
   otherwise backs off exponentially. No path changes credentials or account
 
-## Out of scope
+## Out of Scope
 
 Each with the reason, so nobody relitigates it:
 
-- **Approving permissions on a peer's say-so** — the authority principle; `decide()` has no inbound-state dependency
-- **Free-form agent chat** — cross-session messaging already does this, and prose carries no provenance
-- **Spawning or scheduling agents** — Agent Teams' job
-- **File locking and conflict resolution** — worktree isolation plus Agent Teams' file-locked claiming already cover it
-- **A dashboard** — Agent View already aggregates a developer's local sessions
-- **Live mid-turn delivery** — v2. It needs a supervised lifecycle on the _hook_ path, which v1 deliberately has none
+- **Approving Permissions on a Peer's Say-So** — the authority principle; `decide()` has no inbound-state dependency
+- **Free-Form Agent Chat** — cross-session messaging already does this, and prose carries no provenance
+- **Spawning or Scheduling Agents** — Agent Teams' job
+- **File Locking and Conflict Resolution** — worktree isolation plus Agent Teams' file-locked claiming already cover it
+- **A Dashboard** — Agent View already aggregates a developer's local sessions
+- **Live Mid-Turn Delivery** — v2. It needs a supervised lifecycle on the _hook_ path, which v1 deliberately has none
   of. `dkm revive` supervises a whole run from outside the harness and does not give the hooks one
-- **A learning precedent store** — v3. v1's authority comes from a policy the human wrote, not from inference
+- **A Learning Precedent Store** — v3. v1's authority comes from a policy the human wrote, not from inference

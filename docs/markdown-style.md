@@ -1,4 +1,4 @@
-# Markdown style guide
+# Markdown Style Guide
 
 Much of what makes Markdown refreshing is the ability to write plain text and get great formatted output as a result. To
 keep the slate clean for the next author, your Markdown should be simple and consistent with the whole corpus wherever
@@ -12,43 +12,43 @@ We seek to balance three goals:
 
 Contents:
 
-1.  [Minimum viable documentation](#minimum-viable-documentation)
-1.  [Better is better than best](#better-is-better-than-best)
+1.  [Minimum Viable Documentation](#minimum-viable-documentation)
+1.  [Better Is Better Than Best](#better-is-better-than-best)
 1.  [Capitalization](#capitalization)
-1.  [Document layout](#document-layout)
-1.  [Table of contents](#table-of-contents)
-1.  [Character line limit](#character-line-limit)
-1.  [Trailing whitespace](#trailing-whitespace)
+1.  [Document Layout](#document-layout)
+1.  [Table of Contents](#table-of-contents)
+1.  [Character Line Limit](#character-line-limit)
+1.  [Trailing Whitespace](#trailing-whitespace)
 1.  [Headings](#headings)
-    1.  [ATX-style headings](#atx-style-headings)
-    1.  [Use unique, complete names for headings](#use-unique-complete-names-for-headings)
-    1.  [Add spacing to headings](#add-spacing-to-headings)
-    1.  [Use a single H1 heading](#use-a-single-h1-heading)
-    1.  [Capitalization of titles and headers](#capitalization-of-titles-and-headers)
+    1.  [ATX-Style Headings](#atx-style-headings)
+    1.  [Use Unique, Complete Names for Headings](#use-unique-complete-names-for-headings)
+    1.  [Add Spacing to Headings](#add-spacing-to-headings)
+    1.  [Use a Single H1 Heading](#use-a-single-h1-heading)
+    1.  [Capitalization of Titles and Headers](#capitalization-of-titles-and-headers)
 1.  [Lists](#lists)
-    1.  [Use lazy numbering for long lists](#use-lazy-numbering-for-long-lists)
-    1.  [Nested list spacing](#nested-list-spacing)
+    1.  [Use Lazy Numbering for Long Lists](#use-lazy-numbering-for-long-lists)
+    1.  [Nested List Spacing](#nested-list-spacing)
 1.  [Code](#code)
     1.  [Inline](#inline)
-    1.  [Use code span for escaping](#use-code-span-for-escaping)
+    1.  [Use Code Span for Escaping](#use-code-span-for-escaping)
     1.  [Codeblocks](#codeblocks)
-        1.  [Declare the language](#declare-the-language)
-        1.  [Escape newlines](#escape-newlines)
-        1.  [Use fenced code blocks instead of indented code blocks](#use-fenced-code-blocks-instead-of-indented-code-blocks)
-        1.  [Nest codeblocks within lists](#nest-codeblocks-within-lists)
+        1.  [Declare the Language](#declare-the-language)
+        1.  [Escape Newlines](#escape-newlines)
+        1.  [Use Fenced Code Blocks Instead of Indented Code Blocks](#use-fenced-code-blocks-instead-of-indented-code-blocks)
+        1.  [Nest Codeblocks Within Lists](#nest-codeblocks-within-lists)
 1.  [Links](#links)
-    1.  [Use explicit paths for links within Markdown](#use-explicit-paths-for-links-within-markdown)
-    1.  [Avoid relative paths unless within the same directory](#avoid-relative-paths-unless-within-the-same-directory)
-    1.  [Use informative Markdown link titles](#use-informative-markdown-link-titles)
-    1.  [Reference links](#reference-links)
-        1.  [Use reference links for long links](#use-reference-links-for-long-links)
-        1.  [Use reference links to reduce duplication](#use-reference-links-to-reduce-duplication)
-        1.  [Define reference links after their first use](#define-reference-links-after-their-first-use)
+    1.  [Use Explicit Paths for Links Within Markdown](#use-explicit-paths-for-links-within-markdown)
+    1.  [Avoid Relative Paths Unless Within the Same Directory](#avoid-relative-paths-unless-within-the-same-directory)
+    1.  [Use Informative Markdown Link Titles](#use-informative-markdown-link-titles)
+    1.  [Reference Links](#reference-links)
+        1.  [Use Reference Links for Long Links](#use-reference-links-for-long-links)
+        1.  [Use Reference Links to Reduce Duplication](#use-reference-links-to-reduce-duplication)
+        1.  [Define Reference Links After Their First Use](#define-reference-links-after-their-first-use)
 1.  [Images](#images)
 1.  [Tables](#tables)
-1.  [Strongly prefer Markdown to HTML](#strongly-prefer-markdown-to-html)
+1.  [Strongly Prefer Markdown to HTML](#strongly-prefer-markdown-to-html)
 
-## Minimum viable documentation
+## Minimum Viable Documentation
 
 A small set of fresh and accurate docs is better than a sprawling, loose assembly of "documentation" in various states
 of disrepair.
@@ -59,7 +59,7 @@ keep our tests in good order. Strive for this.
 - Identify what you really need: release docs, API docs, testing guidelines.
 - Delete cruft frequently and in small batches.
 
-## Better is better than best
+## Better Is Better Than Best
 
 The standards for an internal documentation review are different from the standards for code reviews. Reviewers should
 ask for improvements, but in general, the author should always be able to invoke the "Better/Best Rule."
@@ -99,7 +99,7 @@ and not
 `markdown` is a dead-simple platform for internal engineering documentation.
 ```
 
-## Document layout
+## Document Layout
 
 In general, documents benefit from some variation of the following layout:
 
@@ -139,9 +139,9 @@ Content.
 
 [TOC-docs]: https://gerrit.googlesource.com/gitiles/+/HEAD/Documentation/markdown.md#Table-of-contents
 
-## Table of contents
+## Table of Contents
 
-### Use a `[TOC]` directive
+### Use a `[TOC]` Directive
 
 Use a [`[TOC]` directive][TOC-docs] unless all of your content is above the fold[^above] on a laptop.
 
@@ -149,7 +149,7 @@ Use a [`[TOC]` directive][TOC-docs] unless all of your content is above the fold
     Content is "above the fold" if it is visible when the page is first displayed. Content is "below the fold" if it is
     hidden until the user scrolls down the page on a computer or literally unfolds a document such as a newspaper.
 
-### Place the `[TOC]` directive after the introduction
+### Place the `[TOC]` Directive After the Introduction
 
 Place the `[TOC]` directive after your page's introduction and before the first H2 heading. For example:
 
@@ -181,12 +181,12 @@ That's because `[TOC]` inserts the HTML for the table of contents into the DOM w
 your Markdown file. If, for example, you place the directive at the very bottom of your file, screen readers won't read
 it until they get to the end of the document.
 
-## Character line limit
+## Character Line Limit
 
 Markdown content follows the residual convention of an 80-character line limit. Why? Because it's what most of us do for
 code.
 
-- **Tooling integration**: All our tooling is designed around code, so the more our documents are formatted according to
+- **Tooling Integration**: All our tooling is designed around code, so the more our documents are formatted according to
   similar rules, the better these tools will work. For example, Code Search doesn't soft wrap.
 
 - **Quality**. The more engineers use their well-worn coding habits when creating and editing Markdown content, the
@@ -219,7 +219,7 @@ Tables may also run long. However, there are [best practices for creating short,
 | Somehow-unavoidable-long-cell-filled-with-content-that-simply-refuses-to-wrap | Foo | Bar |
 ```
 
-## Trailing whitespace
+## Trailing Whitespace
 
 Don't use trailing whitespace. Use a trailing backslash to break lines.
 
@@ -239,7 +239,7 @@ to that.
 
 ## Headings
 
-### ATX-style headings
+### ATX-Style Headings
 
 ```markdown
 # Heading 1
@@ -255,7 +255,7 @@ Heading - do you remember what level? DO NOT DO THIS.
 ---------
 ```
 
-### Use unique, complete names for headings
+### Use Unique, Complete Names for Headings
 
 Use unique and fully descriptive names for each heading, even for sub-sections. Since link anchors are constructed from
 headings, this helps ensure that the automatically-constructed anchor links are intuitive and clear.
@@ -292,7 +292,7 @@ prefer:
 ### Bar example
 ```
 
-### Add spacing to headings
+### Add Spacing to Headings
 
 Prefer spacing after `#` and newlines before and after:
 
@@ -313,20 +313,21 @@ Lack of spacing makes it a little harder to read in source:
 Text after... DO NOT DO THIS.
 ```
 
-### Use a single H1 heading
+### Use a Single H1 Heading
 
 Use one H1 heading as the title of your document. Subsequent headings should be H2 or deeper. See
-[Document layout](#document-layout) for more information.
+[Document Layout](#document-layout) for more information.
 
-### Capitalization of titles and headers
+### Capitalization of Titles and Headers
 
-Follow the guidance for
-[capitalization](https://developers.google.com/style/capitalization#capitalization-in-titles-and-headings) in the
-[Google Developer Documentation Style Guide](https://developers.google.com/style/).
+This repository departs from the [Google Developer Documentation Style Guide](https://developers.google.com/style/)'s
+guidance on [capitalization](https://developers.google.com/style/capitalization#capitalization-in-titles-and-headings):
+headings, summaries, table headers and bold lead-ins use Title Case. The exact rule lives in `AGENTS.md` under
+"Documentation Hygiene".
 
 ## Lists
 
-### Use lazy numbering for long lists
+### Use Lazy Numbering for Long Lists
 
 Markdown is smart enough to let the resulting HTML render your numbered lists correctly. For longer lists that may
 change, especially long nested lists, use "lazy" numbering:
@@ -348,7 +349,7 @@ read in source:
 3.  Baz.
 ```
 
-### Nested list spacing
+### Nested List Spacing
 
 When nesting lists, use a 4-space indent for both numbered and bulleted lists:
 
@@ -414,7 +415,7 @@ Use inline code when referring to file types in a generic sense, rather than a s
 Be sure to update your `README.md`!
 ```
 
-### Use code span for escaping
+### Use Code Span for Escaping
 
 When you don't want text to be processed as normal Markdown, like a fake path or example URL that would lead to a bad
 autolink, wrap it in backticks:
@@ -436,12 +437,12 @@ def Foo(self, bar):
 ```
 </pre>
 
-#### Declare the language
+#### Declare the Language
 
 It is best practice to explicitly declare the language, so that neither the syntax highlighter nor the next editor must
 guess.
 
-#### Use fenced code blocks instead of indented code blocks
+#### Use Fenced Code Blocks Instead of Indented Code Blocks
 
 Four-space indenting is also interpreted as a code block. However, we strongly recommend fencing for all code blocks.
 
@@ -465,7 +466,7 @@ And again:
     bazel run :yet_again -- --baz
 ```
 
-#### Escape newlines
+#### Escape Newlines
 
 Because most command-line snippets are intended to be copied and pasted directly into a terminal, it's best practice to
 escape any newlines. Use a single backslash at the end of the line:
@@ -477,7 +478,7 @@ $ bazel run :target -- --flag --foo=longlonglonglonglongvalue \
 ```
 </pre>
 
-#### Nest codeblocks within lists
+#### Nest Codeblocks Within Lists
 
 If you need a code block within a list, make sure to indent it so as to not break the list:
 
@@ -506,7 +507,7 @@ You can also create a nested code block with 4 spaces. Simply indent 4 additiona
 Long links make source Markdown difficult to read and break the 80 character wrapping. **Wherever possible, shorten your
 links**.
 
-### Use explicit paths for links within Markdown
+### Use Explicit Paths for Links Within Markdown
 
 Use the explicit path for Markdown links. For example:
 
@@ -520,7 +521,7 @@ You don't need to use the entire qualified URL:
 [...](https://bad-full-url.example.com/path/to/other/markdown/page.md)
 ```
 
-### Avoid relative paths unless within the same directory
+### Avoid Relative Paths Unless Within the Same Directory
 
 Relative paths are fairly safe within the same directory. For example:
 
@@ -535,7 +536,7 @@ Avoid relative links if you need to specify other directories with `../`:
 [...](../../bad/path/to/another/dir/other-page.md)
 ```
 
-### Use informative Markdown link titles
+### Use Informative Markdown Link Titles
 
 Markdown link syntax allows you to set a link title. Use it wisely. Users often do not read documents; they scan them.
 
@@ -562,7 +563,7 @@ Check out a
 [typical test result](https://example.com/foo/bar).
 ```
 
-### Reference links
+### Reference Links
 
 For long links or image URLs, you may want to split the link use from the link definition, like this:
 
@@ -576,7 +577,7 @@ readable.
 ﻿[style]: http://Markdown/corp/Markdown/docs/reference/style.md
 ```
 
-#### Use reference links for long links
+#### Use Reference Links for Long Links
 
 Use reference links where the length of the link would detract from the readability of the surrounding text if it were
 inlined. Reference links make it harder to see the destination of a link in source text, and add additional syntax.
@@ -633,12 +634,12 @@ Instead, use reference links to keep the line length manageable:
 ﻿[site 2]: http://google.com/excessively/long/path/example_site_2
 ```
 
-#### Use reference links to reduce duplication
+#### Use Reference Links to Reduce Duplication
 
 Consider using reference links when referencing the same link destination multiple times in a document, to reduce
 duplication.
 
-#### Define reference links after their first use
+#### Define Reference Links After Their First Use
 
 We recommend putting reference link definitions just before the next heading, at the end of the section in which they're
 first used. If your editor has its own opinion about where they should go, don't fight it; the tools always win.
@@ -729,13 +730,13 @@ DO NOT DO THIS
 
 This table illustrates a few typical problems:
 
-- **Poor distribution**: Several columns don't differ across rows, and some cells are empty. This is usually a sign that
+- **Poor Distribution**: Several columns don't differ across rows, and some cells are empty. This is usually a sign that
   your data may not benefit from tabular display.
 
-- **Unbalanced dimensions**: There are a small number of rows relative to columns. When this ratio is unbalanced in
+- **Unbalanced Dimensions**: There are a small number of rows relative to columns. When this ratio is unbalanced in
   either direction, a table becomes little more than an inflexible format for text.
 
-- **Rambling prose** in some cells. Tables should tell a succinct story at a glance.
+- **Rambling Prose** in some cells. Tables should tell a succinct story at a glance.
 
 [Lists](#lists) and subheadings sometimes suffice to present the same information. Let's see this data in list form:
 
@@ -784,9 +785,9 @@ In those cases, a table format is just the thing. In fact, a compact table can i
 ﻿[tosche_station]: http://google3/power_converter.h
 ```
 
-Note that [reference links](#reference-links) are used to keep the table cells manageable.
+Note that [Reference Links](#reference-links) are used to keep the table cells manageable.
 
-## Strongly prefer Markdown to HTML
+## Strongly Prefer Markdown to HTML
 
 Please prefer standard Markdown syntax wherever possible and avoid HTML hacks. If you can't seem to accomplish what you
 want, reconsider whether you really need it. Except for [big tables](#tables), Markdown meets almost all needs already.
@@ -797,29 +798,29 @@ usefulness of integrations with other tools, which may either present the source
 
 Gitiles does not render HTML.
 
-## Local amendments
+## Local Amendments
 
 This guide is reproduced as received. Four points where this repository's tooling or house rules override it, recorded
 here so the exceptions are not rediscovered from PR descriptions each time.
 
-1.  **Line width is 120, not 80.** The guide's rationale is matching the width you use for code, and `biome.json` sets
+1.  **Line Width Is 120, Not 80.** The guide's rationale is matching the width you use for code, and `biome.json` sets
     `lineWidth: 120`. `.prettierrc.json` mirrors it, so the two formatters cannot fight. The exemptions still apply:
     links, tables, headings and code blocks may run long.
 
-1.  **Prettier owns list indentation.** [Nested list spacing](#nested-list-spacing) prescribes a 3-space bullet with a
+1.  **Prettier Owns List Indentation.** [Nested List Spacing](#nested-list-spacing) prescribes a 3-space bullet with a
     4-space wrap indent and shows the 2-space form as its counterexample, but Prettier rewrites to 2 spaces and the
     section's own conformant example fails `prettier --check` under this repo's config. The formatter wins, per the
     guide's own advice that the tools always win.
 
-1.  **`[TOC]` does not work here.** It is a Gitiles directive and GitHub renders it as literal text. Long documents use
+1.  **`[TOC]` Does Not Work Here.** It is a Gitiles directive and GitHub renders it as literal text. Long documents use
     a manual `Contents:` ordered list placed after the introduction instead, which is what this guide itself does.
 
-1.  **Sentence case for headings, bold lead-in labels and table headers**, per
-    [Capitalization of titles and headers](#capitalization-of-titles-and-headers). Product, tool and proper names keep
+1.  **Title Case for headings, bold lead-in labels and table headers**, per
+    [Capitalization of Titles and Headers](#capitalization-of-titles-and-headers). Product, tool and proper names keep
     their form. The ones that read like ordinary words, and so get lowercased by accident, are the research ledger's
     concept names: `You Decide`, `Ubat Mak`, `Dua Keping`, `Bil Tinggi`, `Tawaran Uni Sah`, `Frozen Friend`,
     `Model Changelog`, `Bahasa Nenek` and `Hound`.
 
-**Two headings must keep their em dash.** `Receipts — shipped 2026-08-31` and `Network reality — measured, not marketed`
+**Two Headings Must Keep Their Em Dash.** `Receipts — shipped 2026-08-31` and `Network reality — measured, not marketed`
 in `superpowers/research/gateway-capabilities.md`: removing the em dash leaves a doubled space, and GitHub turns that
 into the doubled hyphen their anchors carry. Three inbound links depend on it.

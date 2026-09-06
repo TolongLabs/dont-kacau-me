@@ -1,9 +1,9 @@
-# What it looks like in practice
+# What It Looks Like in Practice
 
 Six situations DKM is built for. Expand whichever one sounds like your week.
 
 <details>
-<summary><b>1. Away for the night — the goal keeps moving</b></summary>
+<summary><b>1. Away for the Night — the Goal Keeps Moving</b></summary>
 
 Three tabs are open in one directory. In one of them you say:
 
@@ -20,7 +20,7 @@ You read the receipt in the morning. Nobody waited on you.
 </details>
 
 <details>
-<summary><b>2. Overnight handoff — skip the 3am ping</b></summary>
+<summary><b>2. Overnight Handoff — Skip the 3am Ping</b></summary>
 
 A teammate needs to know whether your agent finished before they can start. Without DKM they message you and wait. With
 DKM the work item already carries the head SHA, changed paths and check results, so they read it instead of asking.
@@ -30,7 +30,7 @@ You did nothing to publish it. The first bound `Stop` wrote the receipt when the
 </details>
 
 <details>
-<summary><b>3. Contract change — warn a dependent session</b></summary>
+<summary><b>3. Contract Change — Warn a Dependent Session</b></summary>
 
 Agent A alters a database schema on PR #81. Agent B is building against the old shape in another worktree and would
 normally discover the mismatch at merge, after both sides have paid for it.
@@ -46,7 +46,7 @@ developers' machines, provided both have the repository and an authenticated `gh
 </details>
 
 <details>
-<summary><b>4. Routine prompts — clear the decision queue</b></summary>
+<summary><b>4. Routine Prompts — Clear the Decision Queue</b></summary>
 
 Three agents stop on three prompts that need no new judgement: run the formatter, run the tests, write a file under
 `src/`. Each one is a context switch for you.
@@ -57,7 +57,7 @@ waits if you left `data-loss` on, because blast-radius rules run first.
 </details>
 
 <details>
-<summary><b>5. Morning review — inspect the decision log</b></summary>
+<summary><b>5. Morning Review — Inspect the Decision Log</b></summary>
 
 ```text
 /dont-kacau-me:dkm-status
@@ -69,7 +69,7 @@ transcripts. A decision with no log entry is a bug, and the test suite fails on 
 </details>
 
 <details>
-<summary><b>6. Human judgement — report a blocker</b></summary>
+<summary><b>6. Human Judgement — Report a Blocker</b></summary>
 
 An agent reaches a genuine judgement call: two viable designs, or a requirement nobody wrote down. It should not invent
 your intent.
@@ -83,7 +83,7 @@ teammates can see it without anyone being interrupted.
 
 </details>
 
-## dkm run: a run that outlives its usage limit
+## dkm run: A Run That Outlives Its Usage Limit
 
 A long unattended run used to end the moment your usage limit was reached. Start it under the supervisor instead:
 
@@ -105,7 +105,7 @@ nothing runs in the background when you are not running it.
 The supervisor resumes the same session by ID rather than replaying the original prompt, so completed work is not
 repeated. What it does on each outcome:
 
-| Situation                      | Supervisor action                                  |
+| Situation                      | Supervisor Action                                  |
 | ------------------------------ | -------------------------------------------------- |
 | Reset up to six hours away     | Wait until reset with a 30-second cushion          |
 | Reset more than six hours away | Recheck after six hours                            |

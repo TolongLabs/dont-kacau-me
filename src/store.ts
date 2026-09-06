@@ -358,8 +358,20 @@ export function registerSession(root: string, sessionId: string, worktreePath: s
   const iso = now.toISOString()
   atomicWrite(
     sessionFile(root, sessionId),
-    JSON.stringify({ sessionId, worktreePath, startedAt: existing?.startedAt ?? iso, lastSeen: iso })
+    JSON.stringify({ ...existing, sessionId, worktreePath, startedAt: existing?.startedAt ?? iso, lastSeen: iso })
   )
+}
+
+/**
+ * True the first time it is asked for a session, so the permission-mode hint is said once. It is
+ * said on the prompt hook because the SessionStart payload carries no `permission_mode`; the
+ * hint lived there for two releases and could never fire.
+ */
+export function claimModeHint(root: string, sessionId: string): boolean {
+  const existing = readSession(root, sessionId)
+  if (existing === null || existing.modeHinted === true) return false
+  atomicWrite(sessionFile(root, sessionId), JSON.stringify({ ...existing, modeHinted: true }))
+  return true
 }
 
 export function touchSession(root: string, sessionId: string, now: Date = new Date()): void {

@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { decide } from './decide'
 import { DEFAULT_BLAST } from './policy'
 import type { DecisionInput, Policy } from './types'
@@ -169,6 +171,34 @@ test('bash still has its whole command scanned for paths', () => {
   // The command text genuinely is the path list, so token scanning stays.
   expect(decide(bash('cat /etc/passwd'), EMPTY_POLICY).decision).toBe('deny')
   expect(decide(bash('sed -i s/x/y/ .dkm/policy.toml'), EMPTY_POLICY).rule).toBe('blast:surface')
+})
+
+test('a bash token that is not shaped like a path cannot leave the worktree', () => {
+  // The command a first AFK run was denied on: a PR body whose TypeScript sample held `//`, which
+  // resolved to the filesystem root. The whole goal was that PR.
+  const body = 'Adds greet(). ```ts\ngreet({ id: "ada" }) // "Hello, ada"\n```'
+  const pr = decide(bash(`gh pr create --title "feat: greet" --body "${body}"`), EMPTY_POLICY)
+  expect(pr.trip).not.toBe('outside-worktree')
+  expect(decide(bash('echo either / or'), EMPTY_POLICY).trip).toBe(null)
+  expect(decide(bash('curl https://example.com/x'), EMPTY_POLICY).trip).not.toBe('outside-worktree')
+  expect(decide(bash('cat /etc/passwd'), EMPTY_POLICY).decision).toBe('deny')
+  expect(decide(bash('cat ../../secret'), EMPTY_POLICY).decision).toBe('deny')
+  expect(decide(bash('cat src/../../../secret'), EMPTY_POLICY).decision).toBe('deny')
+})
+
+test('a home-relative path is outside the worktree', () => {
+  // `~` used to resolve under the worktree, so a write to ~/.bashrc passed the fence.
+  expect(decide(bash('echo x >> ~/.bashrc'), EMPTY_POLICY).decision).toBe('deny')
+  expect(decide(bash('ls ~'), EMPTY_POLICY).decision).toBe('deny')
+})
+
+test("the harness's own scratch directory is not outside the worktree", () => {
+  // Claude Code writes background-task output under its temp directory and tells the model to
+  // read it there. A peer was denied its own task result.
+  const task = join(tmpdir(), 'claude-1000', 'proj', 'sess', 'tasks', 'x.output')
+  expect(decide(bash(`cat ${task}`), EMPTY_POLICY).trip).toBe(null)
+  expect(decide(write(join(tmpdir(), 'claude-1000', 'scratch', 'a.md')), EMPTY_POLICY).trip).toBe(null)
+  expect(decide(write(join(tmpdir(), 'other', 'a.md')), EMPTY_POLICY).decision).toBe('deny')
 })
 
 test('a prose field whose whole value is a path is still prose', () => {

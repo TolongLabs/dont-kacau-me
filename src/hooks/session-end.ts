@@ -1,5 +1,5 @@
 import { unregisterSession, writeResumeTicket } from '../store'
-import { runHook } from './runtime'
+import { installed, runHook } from './runtime'
 
 /**
  * A session that ends leaves behind the one fact a supervisor needs to pick the work back up: which
@@ -7,6 +7,7 @@ import { runHook } from './runtime'
  * tell a usage limit from a clean exit and must not guess at one.
  */
 runHook((payload, root) => {
+  if (!installed(root)) return ''
   unregisterSession(root, payload.session_id)
   writeResumeTicket(root, {
     sessionId: payload.session_id,

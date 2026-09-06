@@ -1,4 +1,6 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { dkmPath } from '../store'
 
 export type HookPayload = {
   session_id: string
@@ -28,6 +30,16 @@ export function repoRoot(cwd: string): string | null {
   if (r.status !== 0 || typeof r.stdout !== 'string') return null
   const out = r.stdout.trim()
   return out.length > 0 ? out : null
+}
+
+/**
+ * The plugin is installed once per machine, so its hooks run in every git repository the user opens.
+ * Nothing happens in one until `dkm init` or `dkm bind` created `.dkm/` there: before this gate a
+ * repository nobody opted in still paid for GitHub calls on its first prompt, collected session
+ * records, and in an asking mode was fenced by a policy that did not exist.
+ */
+export function installed(root: string): boolean {
+  return existsSync(dkmPath(root))
 }
 
 export async function readStdin(): Promise<string> {

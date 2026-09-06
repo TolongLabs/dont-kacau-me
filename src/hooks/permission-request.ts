@@ -1,5 +1,5 @@
 import { decide } from '../decide'
-import { loadPolicy } from '../policy'
+import { loadPolicy, policyExists } from '../policy'
 import { appendDecision } from '../store'
 import type { DecisionRecord, PermissionDecision } from '../types'
 import { readPayload, readStdin, repoRoot } from './runtime'
@@ -40,7 +40,9 @@ async function main(): Promise<void> {
   if (payload === null || typeof payload.tool_name !== 'string') emit('ask', '')
 
   const root = repoRoot(payload.cwd)
-  if (root === null) emit('ask', '')
+  // No policy file means nobody granted anything here, so there is nothing to execute and
+  // nothing to log; the built-in blast defaults are defaults for a policy, not a policy.
+  if (root === null || !policyExists(root)) emit('ask', '')
 
   const policy = loadPolicy(root)
   const verdict = decide(

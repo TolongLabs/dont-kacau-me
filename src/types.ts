@@ -135,6 +135,7 @@ export type SessionRecord = {
   worktreePath: string
   startedAt: string
   lastSeen: string
+  modeHinted?: boolean
 }
 
 export type ResumeTicket = {

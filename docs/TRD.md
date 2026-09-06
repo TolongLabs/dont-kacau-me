@@ -116,9 +116,10 @@ records use append-only JSONL. `clearReport()` removes the per-session report af
 A recipient is a session, not a worktree. Every session open in a repository's directory is a peer: it registers, is
 delivered its own copy of every event, and is removed when it ends.
 
-`SessionRecord` in `src/types.ts` holds `sessionId`, `worktreePath`, `startedAt` and `lastSeen`, all strings. Each
-record is one file at `.dkm/sessions/<sha256(sessionId)[0:16]>.json`, named by `recipientKey(sessionId)` and written
-atomically.
+`SessionRecord` in `src/types.ts` holds `sessionId`, `worktreePath`, `startedAt` and `lastSeen`, all strings, and an
+optional `modeHinted` boolean that `claimModeHint()` sets the first time the prompt hook warns the session about a
+non-asking permission mode. `registerSession()` preserves it across re-registration. Each record is one file at
+`.dkm/sessions/<sha256(sessionId)[0:16]>.json`, named by `recipientKey(sessionId)` and written atomically.
 
 - `registerSession(root, sessionId, worktreePath)` creates the record, or refreshes `lastSeen` while keeping the
   original `startedAt`. `SessionStart` calls it; `UserPromptSubmit` calls it on every prompt, which is both a touch and
@@ -152,15 +153,22 @@ type HookPayload = {
 ```
 
 At runtime, `readPayload()` validates only that the input is an object with string `session_id` and `cwd`. Individual
-handlers consume the other fields conditionally.
+handlers consume the other fields conditionally. Captured from the harness: the `SessionStart` payload carries `source`
+and no `permission_mode`; the `UserPromptSubmit` payload carries `permission_mode` and `prompt`.
 
-| Hook                | Required by its handler                    | Normal side effect                                                                    |
-| ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `PermissionRequest` | `tool_name`; `tool_input` may be any value | Append a decision record, then emit a decision object or `{}`                         |
-| `Stop`              | Valid `cwd`; optional `stop_hook_active`   | Touch the session, then measure a bound worktree and possibly upsert its receipt      |
-| `SessionStart`      | Valid `cwd`                                | Register the session, run ingest, prepend the mode and unbound hints, drain its queue |
-| `UserPromptSubmit`  | Valid `cwd`                                | Register the session (touch or recover), run throttled ingest, drain its queue        |
-| `SessionEnd`        | Valid `cwd`; optional string `reason`      | Unregister the session and remove its queue, then replace `.dkm/last-session.json`    |
+Every handler first checks `installed(root)` in `src/hooks/runtime.ts`, which is whether `.dkm/` exists under the
+repository's common git directory. The plugin is installed once per machine and its hooks run in every repository, so a
+repository nobody ran `dkm init` or `dkm bind` in gets no network calls, no session records and no decisions: the
+injection and `Stop` hooks return nothing, `SessionStart` prints one line naming `dkm-init`, and `PermissionRequest`
+emits `{}` without a record whenever `policyExists(root)` is false.
+
+| Hook                | Required by its handler                    | Normal side effect                                                                  |
+| ------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `PermissionRequest` | `tool_name`; `tool_input` may be any value | Append a decision record, then emit a decision object or `{}`                       |
+| `Stop`              | Valid `cwd`; optional `stop_hook_active`   | Touch the session, then measure a bound worktree and possibly upsert its receipt    |
+| `SessionStart`      | Valid `cwd`                                | Register the session, run ingest, prepend the unbound hint, drain its queue         |
+| `UserPromptSubmit`  | Valid `cwd`; optional `permission_mode`    | Register the session, run throttled ingest, say the mode hint once, drain its queue |
+| `SessionEnd`        | Valid `cwd`; optional string `reason`      | Unregister the session and remove its queue, then replace `.dkm/last-session.json`  |
 
 `runHook()` wraps `SessionStart`, `UserPromptSubmit` and `SessionEnd`. It catches handler errors, writes nothing after
 an error and exits 0. `Stop` and `PermissionRequest` use their own top-level catch paths and also exit 0.
@@ -201,10 +209,14 @@ does not return a path aborts creation. DKM therefore does not use either event 
 
 ### Injection hook output
 
-`src/hooks/session-start.ts` registers the session, calls `ingest(root)`, prepends the output of `permissionModeHint()`
-and `unboundHint()`, then drains this session's queue with `drainAndRender(root, session_id)`. The prompt hook registers
-the session the same way — a second registration is a touch, and creates the record for a session that started before
-registration existed — then calls `ingest(root, REFETCH_INTERVAL_MS)` with `REFETCH_INTERVAL_MS = 120_000` and drains.
+`src/hooks/session-start.ts` registers the session, calls `ingest(root)`, prepends the output of `unboundHint()`, then
+drains this session's queue with `drainAndRender(root, session_id)`. The prompt hook registers the session the same way
+— a second registration is a touch, and creates the record for a session that started before registration existed — then
+calls `ingest(root, REFETCH_INTERVAL_MS, BUDGET_MS, Date.now, false)` with `REFETCH_INTERVAL_MS = 300_000`, prepends
+`permissionModeHint(root, session_id, permission_mode)` and drains. The hint is empty for an asking mode (`default`,
+`manual`, `plan`), for a repository with no policy file, and on every prompt after the first, which `claimModeHint()`
+records on the session. It is addressed to the model and asks it to tell the human, because prompt-hook stdout reaches
+the model rather than the screen.
 
 When the queue is non-empty, `render()` writes plain text grouped by tracking tier in the fixed order `mentioned`,
 `bound`, `followed`, `ambient`, so a mention is always read first. A queued event with a receipt becomes a single line
@@ -472,7 +484,7 @@ the `DEFAULT_BLAST` value, which a file with no `[blast]` table inherits:
 
 | Trip               | `DEFAULT_BLAST` | Predicate in `src/decide.ts`                                                                                         |
 | ------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `outside-worktree` | `deny`          | A path-designating field, or any `Bash` command token, resolves outside `worktreePath`                               |
+| `outside-worktree` | `deny`          | A path-designating field, or a path-shaped `Bash` token, resolves outside `worktreePath` and the harness scratch     |
 | `data-loss`        | `ask`           | Recursive forced `rm`, destructive SQL substring, or a resolved path segment equal to `migrations` or `drizzle`      |
 | `money`            | `ask`           | `npm publish`, `bun publish`, `vercel deploy` or `gh release create`                                                 |
 | `egress`           | `ask`           | `curl`, `wget`, `git push`, selected deploy commands, selected `gh` creates/comments or `gh api ... -X <write verb>` |
@@ -513,7 +525,11 @@ The implementation does not inspect TypeScript exports or otherwise detect a gen
 `pathCandidates()` produces the candidate set that `outside-worktree`, the data-loss path check, the surface check and
 `rule.paths` all operate on. It is tool-aware:
 
-- For `Bash`, every string and every whitespace-separated token, because a command's text is its path list.
+- For `Bash`, every string and every whitespace-separated token, because a command's text is its path list. The
+  `outside-worktree` check then resolves only tokens that could leave the worktree — absolute, `~`-relative (expanded to
+  the home directory) or containing `..` — and skips tokens made only of slashes, so `//` in a PR body's code sample no
+  longer resolves to the filesystem root. A resolved path under `<tmpdir>/claude-*`, where Claude Code keeps
+  background-task output and scratch files, is treated as inside.
 - For every other tool, only string values whose key names a filesystem target: `file_path`, `path`, `paths`,
   `notebook_path`, `destination`, `filename` and the rest of `PATH_KEYS`, matched case-insensitively at any depth so
   `edits: [{ file_path }]` is reached.

@@ -1,9 +1,8 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { fetchMentions, fetchSince, findReceiptComment, repoNodeId } from '../github'
+import { policyExists } from '../policy'
 import { parseReceipt } from '../receipt'
 import {
-  dkmPath,
+  claimModeHint,
   drainPending,
   liveSessions,
   readBindings,
@@ -245,14 +244,15 @@ export function drainAndRender(root: string, sessionId: string): string {
  */
 const ASKING_MODES = new Set(['default', 'manual', 'plan'])
 
-export function permissionModeHint(root: string, mode: string | undefined): string {
+export function permissionModeHint(root: string, sessionId: string, mode: string | undefined): string {
   if (mode === undefined || ASKING_MODES.has(mode)) return ''
-  if (!existsSync(join(dkmPath(root), 'policy.toml'))) return ''
-  return `⟨dkm⟩ this session runs in ${mode}, which answers its own permission prompts, so your .dkm/policy.toml may never be consulted. Run with --permission-mode manual to let DKM decide.\n`
+  if (!policyExists(root)) return ''
+  if (!claimModeHint(root, sessionId)) return ''
+  return `⟨dkm⟩ tell the human, once and in one line: this session runs in ${mode}, which never raises a permission prompt, so the DKM policy is not consulted here. Peers, @mentions and receipts still work. Starting every tab with --permission-mode manual lets the policy decide and log instead.\n`
 }
 
 export function unboundHint(root: string): string {
-  if (!existsSync(join(dkmPath(root), 'policy.toml'))) return ''
+  if (!policyExists(root)) return ''
   const binding = readBindings(root).bindings.find((b) => b.worktreePath === root)
   if (binding !== undefined && binding.bound !== null) return ''
   return '⟨dkm⟩ this worktree is not bound to a work item, so it will publish no receipts. Bind it with /dont-kacau-me:dkm-bind <number>.\n'

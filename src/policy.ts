@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dkmPath } from './store'
 import type { BlastRadiusTrip, BlastSetting, Policy, PolicyAllowRule } from './types'
@@ -80,6 +80,10 @@ function parseStringArray(raw: string): string[] {
     }
   }
   return parts.filter((p) => p !== '')
+}
+
+export function policyExists(root: string): boolean {
+  return existsSync(join(dkmPath(root), 'policy.toml'))
 }
 
 export function loadPolicy(root: string): Policy {

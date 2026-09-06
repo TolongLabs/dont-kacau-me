@@ -60,6 +60,8 @@ Work until the goal is met. Commit as you go with clear messages. When you finis
 - Prefer a non-breaking change over a clean one. The human wants it shipped, not perfect.
 - If something is genuinely blocked and no assumption is safe, record it with
   `bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts blocker <what and why>`, then move to the next thing.
+- Peers share this working directory and its checked-out branch. Whoever creates the branch says so in a message, and
+  nobody switches branches after that until the goal ships.
 - Never push to `main` directly. Branch, commit, push the branch, open a pull request.
 - When DKM denies a tool call, do not retry it. It was denied by the policy the human wrote.
 

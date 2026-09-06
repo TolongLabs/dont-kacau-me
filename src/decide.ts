@@ -1,3 +1,4 @@
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import type { BlastRadiusTrip, DecisionInput, PermissionDecision, Policy, PolicyAllowRule } from './types'
 
@@ -110,10 +111,36 @@ function isUnder(resolved: string, worktree: string): boolean {
   return resolved.startsWith(prefix)
 }
 
+/**
+ * A Bash token counts here only when it is shaped like a path that could leave the worktree:
+ * absolute, home-relative or climbing through `..`. The scan used to resolve every token, so the
+ * `//` in a PR body's code sample became `/` and denied the `gh pr create` that was the whole goal.
+ * A relative token like `src/a.ts` cannot leave the worktree and a URL starts with a letter, so
+ * neither needs resolving. Surface and data-loss checks still see every token.
+ */
+function couldLeaveWorktree(token: string): boolean {
+  if (/^\/+$/.test(token)) return false
+  return /^(\/|~(\/|$)|\.\.(\/|$))/.test(token) || token.includes('/../')
+}
+
+function expandHome(token: string): string {
+  return token === '~' || token.startsWith('~/') ? homedir() + token.slice(1) : token
+}
+
+/**
+ * Claude Code writes background-task output and its scratch files under its own temp directory
+ * and tells the model to read them there. A peer was denied its own task result.
+ */
+function isHarnessScratch(resolved: string): boolean {
+  return resolved.startsWith(path.join(tmpdir(), 'claude-'))
+}
+
 function isOutsideWorktree(input: DecisionInput): boolean {
   for (const candidate of pathCandidates(input)) {
-    const resolved = path.resolve(input.cwd, candidate)
-    if (!isUnder(resolved, input.worktreePath)) return true
+    if (input.toolName === 'Bash' && !couldLeaveWorktree(candidate)) continue
+    const resolved = path.resolve(input.cwd, expandHome(candidate))
+    if (isUnder(resolved, input.worktreePath) || isHarnessScratch(resolved)) continue
+    return true
   }
   return false
 }

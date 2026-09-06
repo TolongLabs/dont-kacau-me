@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
 ![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/v0.5.2-informational?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.5.3-informational?style=for-the-badge)
 
 **A Claude Code plugin that answers for your AI coding sessions — and keeps them working while you are away.**
 
@@ -121,7 +121,9 @@ stays different is the record, the receipts and the one boundary:
 so a committed policy sits unused. That covers `--dangerously-skip-permissions` and any non-asking `--permission-mode`,
 including one set as `permissions.defaultMode` in your settings, which applies to every session you start.
 
-Since v0.4.1 a session in one of those modes says so at startup rather than looking like a policy that is working.
+A session in one of those modes is told so on its first prompt and asked to tell you, rather than looking like a policy
+that is working. Peers, @mentions, receipts and `dkm-afk` work in every mode; only the deciding and the log need an
+asking one.
 
 ## The rule that keeps this safe
 
@@ -194,6 +196,9 @@ the policy half you need neither.
 
 Claude Code namespaces a plugin's commands, so every DKM command is typed as `/dont-kacau-me:<command>`, never
 `/<command>`.
+
+The plugin's hooks run in every repository on your machine and do nothing in one until `dkm-init` or `dkm-bind` has
+created `.dkm/` there; a session in any other repository sees one line saying so.
 
 Re-running `dkm-init` is also how you diagnose a repository later. It never replaces a policy that already exists unless
 you pass `--force`.
@@ -313,7 +318,7 @@ teammates can see it without anyone being interrupted.
   `.dkm/` state. Reaching a machine beyond what the repository carries is a v3 concern.
 - **A non-asking permission mode bypasses the policy entirely.** `--dangerously-skip-permissions` and any
   `--permission-mode` that answers its own prompts never emit `PermissionRequest`, so no decision is made or logged. A
-  session in one says so at startup.
+  session in one is told so on its first prompt and asked to tell you; everything but the deciding still works.
 - **No inbound consent path.** Another Claude session cannot approve a prompt, and a relayed approval is untrusted.
   `decide()` accepts only permission input and policy, importing neither the pending store nor the GitHub client.
 - **No learning precedent store yet.** v1 authority comes from human-written, committed policy, not accumulated
@@ -329,6 +334,9 @@ teammates can see it without anyone being interrupted.
 - **Peers must share a permission mode.** Claude Code holds a message between sessions whose permission modes differ
   until you approve it, so start every tab the same way. A tab in `manual` and a tab under
   `--dangerously-skip-permissions` will prompt you for each message between them.
+- **Only a path-shaped Bash token can trip the fence, and prose that holds one still does.** A token is resolved only
+  when it is absolute, starts with `~` or climbs through `..`, so `//` in a PR body no longer denies the PR, but
+  `/etc/passwd` inside a heredoc still does. Claude Code's own `<tmpdir>/claude-*` scratch is inside the fence.
 - **You cannot @mention yourself.** GitHub does not notify people of their own comments, so a mention only reaches DKM
   when a teammate writes it.
 - **The prompt hook never waits on the network.** Receipts and ambient updates are fetched on session start and then at

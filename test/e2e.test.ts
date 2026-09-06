@@ -128,6 +128,15 @@ function bind(root: string, number: number, env: Record<string, string>): void {
   if (r.status !== 0) throw new Error(`bind failed: ${r.stderr ?? ''}`)
 }
 
+/**
+ * Hooks are no-ops in a repository with no `.dkm/`, and the permission hook decides nothing
+ * without a policy file, so a test that expects a decision has to grant one first.
+ */
+function seedPolicy(root: string): void {
+  mkdirSync(join(root, '.dkm'), { recursive: true })
+  writeFileSync(join(root, '.dkm', 'policy.toml'), 'version = 1\n')
+}
+
 const boundIssue = JSON.stringify({ id: 'PR_1', number: 42, isPr: true })
 
 function bindFixture(): Fixture {
@@ -172,6 +181,7 @@ test('4. permission-request asks on curl', () => {
   try {
     mkdirSync(join(root, '.dkm'), { recursive: true })
     const env = setupForTest(root, {})
+    seedPolicy(root)
     const r = runHook(
       'permission-request',
       root,
@@ -199,24 +209,26 @@ test('4. permission-request asks on curl', () => {
   }
 })
 
-test('5. permission-request asks with no policy', () => {
+test('5. permission-request asks with no policy, even outside the worktree, and logs nothing', () => {
+  // The plugin's hooks run in every repository on the machine. Before this, a repository nobody
+  // ran init in was still fenced by the built-in blast defaults and grew a decisions log.
   const root = makeRepo()
   try {
     const env = setupForTest(root, {})
-    const r = runHook(
-      'permission-request',
-      root,
-      {
-        session_id: 's1',
-        cwd: root,
-        hook_event_name: 'PermissionRequest',
-        tool_name: 'Bash',
-        tool_input: { command: 'ls' }
-      },
-      env
-    )
-    expect(r.status).toBe(0)
-    expect(r.stdout).toBe('{}')
+    for (const [tool_name, tool_input] of [
+      ['Bash', { command: 'ls' }],
+      ['Write', { file_path: '/etc/passwd' }]
+    ] as const) {
+      const r = runHook(
+        'permission-request',
+        root,
+        { session_id: 's1', cwd: root, hook_event_name: 'PermissionRequest', tool_name, tool_input },
+        env
+      )
+      expect(r.status).toBe(0)
+      expect(r.stdout).toBe('{}')
+    }
+    expect(existsSync(join(root, '.dkm'))).toBe(false)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -226,6 +238,7 @@ test('5b. permission-request denies a write outside the worktree', () => {
   const root = makeRepo()
   try {
     const env = setupForTest(root, {})
+    seedPolicy(root)
     const r = runHook(
       'permission-request',
       root,
@@ -385,6 +398,7 @@ test("7c. the decision summary counts the turn, not the session's whole lifetime
       },
       logPath
     )
+    seedPolicy(root)
     bind(root, 42, env)
 
     const decide = (command: string) =>
@@ -484,6 +498,58 @@ test('9. stop with stop_hook_active true bails out', () => {
   }
 })
 
+test('9b. every hook is a no-op in a repository nobody set DKM up in, and session-start says so', () => {
+  const root = makeRepo()
+  try {
+    const env = setupForTest(root, {})
+    const start = runHook('session-start', root, { session_id: 's1', cwd: root, hook_event_name: 'SessionStart' }, env)
+    expect(start.status).toBe(0)
+    expect(start.stdout).toContain('dkm-init')
+    for (const [hook, payload] of [
+      ['user-prompt-submit', { hook_event_name: 'UserPromptSubmit', permission_mode: 'bypassPermissions' }],
+      ['stop', { hook_event_name: 'Stop' }],
+      ['session-end', { hook_event_name: 'SessionEnd', reason: 'exit' }]
+    ] as const) {
+      const r = runHook(hook, root, { session_id: 's1', cwd: root, ...payload }, env)
+      expect(r.status).toBe(0)
+      expect(r.stdout).toBe('')
+    }
+    expect(existsSync(join(root, '.dkm'))).toBe(false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('9c. the prompt hook tells a non-asking session once that the policy is not consulted', () => {
+  // SessionStart has no permission_mode in its payload, captured from the harness, so the hint
+  // could never fire there. The prompt payload carries it.
+  const root = makeRepo()
+  try {
+    const env = setupForTest(root, {})
+    seedPolicy(root)
+    const payload = {
+      session_id: 's1',
+      cwd: root,
+      hook_event_name: 'UserPromptSubmit',
+      permission_mode: 'bypassPermissions'
+    }
+    const first = runHook('user-prompt-submit', root, payload, env)
+    expect(first.status).toBe(0)
+    expect(first.stdout).toContain('bypassPermissions')
+    const second = runHook('user-prompt-submit', root, payload, env)
+    expect(second.stdout).not.toContain('bypassPermissions')
+    const manual = runHook(
+      'user-prompt-submit',
+      root,
+      { ...payload, session_id: 's2', permission_mode: 'default' },
+      env
+    )
+    expect(manual.stdout).not.toContain('not consulted')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('10. session-start drains pending events', () => {
   const root = makeRepo()
   try {
@@ -567,6 +633,7 @@ test('12. session-end leaves a ticket naming the session that just ended', () =>
   const root = makeRepo()
   try {
     const env = setupForTest(root, {})
+    seedPolicy(root)
     const r = runHook(
       'session-end',
       root,

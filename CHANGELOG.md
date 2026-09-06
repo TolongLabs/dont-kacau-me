@@ -8,6 +8,28 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-09-07
+
+Found by the maintainer's second run as a new user, in an AFK goal that shipped code but not its pull request.
+
+### Fixed
+
+- **The outside-worktree fence denied `gh pr create`** because the PR body's TypeScript sample held `//`, which the
+  token scan resolved to the filesystem root, and denied a peer reading its own background-task output under
+  `/tmp/claude-*`. Only a token shaped like a path is resolved now — absolute, `~`-relative or through `..` — and the
+  harness's own scratch directory is inside the fence. `~` used to resolve under the worktree and slipped past it.
+- **The permission-mode warning could never appear.** It was emitted on `SessionStart`, whose payload has no
+  `permission_mode`. It is said once per session on the first prompt, where the payload carries the mode, and is
+  addressed to the model so the human hears it.
+- **Hooks did work in repositories nobody set DKM up in.** They ran in every git repository on the machine, spent
+  seconds on GitHub on the first prompt, wrote session records, and in an asking mode fenced the worktree with a policy
+  that did not exist. Every hook is now a no-op until `.dkm/` exists; `SessionStart` prints one line naming `dkm-init`
+  and `PermissionRequest` emits `{}` without a record.
+
+### Changed
+
+- `dkm-afk` tells peers they share one checked-out branch and not to switch it once the branch is announced.
+
 ## [0.5.2] — 2026-09-05
 
 Found by the maintainer's first run as a new user.
@@ -233,6 +255,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.5.3]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.4.3...v0.5.0

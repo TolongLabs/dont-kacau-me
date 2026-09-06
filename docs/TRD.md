@@ -482,13 +482,13 @@ nobody wrote. Any table header — `[[allow]]` or otherwise — ends `[blast]` p
 `policy.blast` setting — `deny` or `ask`; a trip set to `off` is skipped, so it is never evaluated. The column below is
 the `DEFAULT_BLAST` value, which a file with no `[blast]` table inherits:
 
-| Trip               | `DEFAULT_BLAST` | Predicate in `src/decide.ts`                                                                                         |
-| ------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `outside-worktree` | `deny`          | A path-designating field, or a path-shaped `Bash` token, resolves outside `worktreePath` and the harness scratch     |
-| `data-loss`        | `ask`           | Recursive forced `rm`, destructive SQL substring, or a resolved path segment equal to `migrations` or `drizzle`      |
-| `money`            | `ask`           | `npm publish`, `bun publish`, `vercel deploy` or `gh release create`                                                 |
-| `egress`           | `ask`           | `curl`, `wget`, `git push`, selected deploy commands, selected `gh` creates/comments or `gh api ... -X <write verb>` |
-| `surface`          | `ask`           | A supported lockfile, `package.json`, `.env`, `.env.*` or any resolved path containing a `.dkm` segment              |
+| Trip               | `DEFAULT_BLAST` | Predicate in `src/decide.ts`                                                                                        |
+| ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `outside-worktree` | `deny`          | A path-designating field, or a path-shaped `Bash` token, resolves outside `worktreePath` and the harness scratch    |
+| `data-loss`        | `ask`           | Recursive forced `rm`, destructive SQL substring, or a resolved path segment equal to `migrations` or `drizzle`     |
+| `money`            | `ask`           | In a `Bash` command: `npm publish`, `bun publish`, `vercel deploy` or `gh release create`                           |
+| `egress`           | `ask`           | In a `Bash` command: `curl`, `wget`, `git push`, deploy commands, `gh` creates/comments or `gh api -X <write verb>` |
+| `surface`          | `ask`           | A supported lockfile, `package.json`, `.env`, `.env.*` or any resolved path containing a `.dkm` segment             |
 
 The case-insensitive data-loss SQL substrings are:
 
@@ -533,6 +533,11 @@ The implementation does not inspect TypeScript exports or otherwise detect a gen
 - For every other tool, only string values whose key names a filesystem target: `file_path`, `path`, `paths`,
   `notebook_path`, `destination`, `filename` and the rest of `PATH_KEYS`, matched case-insensitively at any depth so
   `edits: [{ file_path }]` is reached.
+
+`isMoney()`, `isEgress()` and the `rm`/SQL half of `isDataLoss()` read `commandStrings()`, which returns every string of
+the payload for `Bash` and nothing for any other tool. A command pattern means something only in a command; scanning
+every string let a file body that mentioned `deploy` take back a prompt the policy had granted (issue #29). A non-Bash
+tool that executes shell under another name is not scanned and lands on `ask` by the unmatched path.
 
 Earlier revisions scanned every string in `tool_input`, which let a tool's prose decide a permission: a `WebSearch` for
 `/etc/hosts`, a todo mentioning `/usr/local` and an `AskUserQuestion` offering `/dkm-init` were denied outright, and

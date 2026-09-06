@@ -21,6 +21,16 @@ function extractStrings(value: unknown): string[] {
   return out
 }
 
+/**
+ * Command patterns mean something only in a command. Scanning every string let a file body that
+ * mentioned `deploy`, or a note containing `delete from`, take back a prompt the policy had
+ * granted away. A non-Bash tool that executes shell under another name is not scanned and falls
+ * to `ask` on the unmatched path, which is the same answer with a different reason.
+ */
+function commandStrings(input: DecisionInput): string[] {
+  return input.toolName === 'Bash' ? extractStrings(input.toolInput) : []
+}
+
 function getContentString(toolInput: unknown): string {
   if (typeof toolInput === 'string') return toolInput
   if (typeof toolInput === 'object' && toolInput !== null) {
@@ -83,7 +93,7 @@ function pathCandidates(input: DecisionInput): string[] {
     seen.add(v)
   }
   if (input.toolName === 'Bash') {
-    for (const str of extractStrings(input.toolInput)) {
+    for (const str of commandStrings(input)) {
       add(str)
       for (const token of str.split(/\s+/)) {
         add(stripQuotes(token))
@@ -173,7 +183,7 @@ function hasDestructiveSql(str: string): boolean {
 }
 
 function isDataLoss(input: DecisionInput): boolean {
-  for (const str of extractStrings(input.toolInput)) {
+  for (const str of commandStrings(input)) {
     if (isRmRf(str) || hasDestructiveSql(str)) return true
   }
   for (const candidate of pathCandidates(input)) {
@@ -187,7 +197,7 @@ function isDataLoss(input: DecisionInput): boolean {
 }
 
 function isMoney(input: DecisionInput): boolean {
-  for (const str of extractStrings(input.toolInput)) {
+  for (const str of commandStrings(input)) {
     const lower = str.toLowerCase()
     if (/\bnpm\s+publish\b/.test(lower)) return true
     if (/\bbun\s+publish\b/.test(lower)) return true
@@ -198,7 +208,7 @@ function isMoney(input: DecisionInput): boolean {
 }
 
 function isEgress(input: DecisionInput): boolean {
-  for (const str of extractStrings(input.toolInput)) {
+  for (const str of commandStrings(input)) {
     if (/\b(curl|wget)\b/i.test(str)) return true
     if (/\bgit\s+push\b/i.test(str)) return true
     if (/\b(bun|npm)\s+run\s+deploy\b/i.test(str)) return true

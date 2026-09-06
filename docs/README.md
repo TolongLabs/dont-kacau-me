@@ -20,168 +20,73 @@ _Kacau_ is Malay for "to disturb". The name is the product: don't bother me.
 <details>
   <summary>Expand</summary>
   <ol>
-    <li><a href="#is-this-for-you">Is this for you?</a></li>
-    <li><a href="#the-two-problems">The two problems</a></li>
-    <li><a href="#what-dkm-does-about-them">What DKM does about them</a></li>
-    <li><a href="#the-rule-that-keeps-this-safe">The rule that keeps this safe</a></li>
-    <li><a href="#getting-started">Getting started</a></li>
+    <li><a href="#what-it-does">What it does</a></li>
+    <li><a href="#quick-start">Quick start</a></li>
+    <li><a href="#which-permission-mode-to-use">Which permission mode to use</a></li>
     <li><a href="#the-commands">The commands</a></li>
-    <li><a href="#what-it-looks-like-in-practice">What it looks like in practice</a></li>
+    <li><a href="#how-it-stays-safe">How it stays safe</a></li>
     <li><a href="#what-dkm-cannot-do">What DKM cannot do</a></li>
     <li><a href="#under-the-hood">Under the hood</a></li>
-    <li><a href="#architecture">Architecture</a></li>
-    <li><a href="#configuration">Configuration</a></li>
-    <li><a href="#tech-stack">Tech stack</a></li>
     <li><a href="#repository-layout">Repository layout</a></li>
+    <li><a href="#go-deeper">Go deeper</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#licence">Licence</a></li>
-    <li><a href="#how-work-ships">How work ships</a></li>
   </ol>
 </details>
 
-## Is this for you?
+## What it does
 
-You open **several Claude Code tabs in one project directory**, tell them a goal, and walk away. One tab fixes a bug,
-another builds a feature, and you check back in the morning. A second git worktree is for a second branch — a second
-session does not need one.
-
-That works. But two new problems show up, and they get **worse the better your agents get**.
+- **Several tabs in one directory become peers.** They split a goal, keep themselves alive on a heartbeat and ship it
+  while you are away.
+- **A policy you wrote answers routine permission prompts.** Every decision is logged with the rule that made it, so you
+  can read back what happened while you slept.
+- **Receipts and @mentions travel without you.** A receipt with the commit SHA, changed files and check results lands on
+  the GitHub issue or PR, and a teammate's @mention reaches a peer ahead of everything else.
 
 If you only ever run one session at a time, and never leave it alone, you do not need DKM yet.
 
-## The two problems
+## Quick start
 
-### 1. You become the courier
+1. **Check the prerequisites.**
 
-Agent A finishes something. Agent B needs to know. Nothing connects them, so **you** read A's summary and paste it into
-B.
+   - [Claude Code](https://code.claude.com/docs/en/plugins) and [Bun](https://bun.sh/)
+   - An authenticated [`gh`](https://cli.github.com/) and a GitHub remote, needed only for receipts and @mentions
 
-Every time you do that, a fact becomes prose. It loses the commit it was true at, and nobody can check it any more.
-Teammates have the same problem from outside: they message you to ask whether your agent finished, and the answer waits
-until you wake up.
-
-### 2. You become the queue
-
-Every session stops and asks permission. _Run the formatter? Run the tests? Write this file?_
-
-Three agents blocked on one person are all waiting on **your attention**, which makes you the slowest part of your own
-setup. Most of those questions are not judgement calls. They are things you already decided a hundred times.
-
-## What DKM does about them
-
-### For the courier problem: receipts
-
-When a session finishes a turn **and the repository actually moved**, DKM posts a comment on the GitHub issue or PR that
-session is working on.
-
-Not a summary. A **receipt**: the exact commit SHA, which files changed, whether CI passed. One comment per work item,
-edited in place, so it never becomes a wall of noise.
-
-The important part is that every field is labelled by **how much you can trust it**:
-
-| Kind           | Where it came from                    | What you may do with it               |
-| -------------- | ------------------------------------- | ------------------------------------- |
-| **measured**   | `git` and `gh`, so an actual fact     | Act on it                             |
-| **reported**   | The agent's claim about its own state | Route it, never treat it as repo fact |
-| **unverified** | The agent's prose                     | Display it, nothing more              |
-
-That separation is the point: an agent's opinion can never quietly become a repository fact.
-
-### For the queue problem: a policy you write once
-
-You write a small file, `.dkm/policy.toml`, saying what you have already decided. _Running tests is fine. Editing files
-under `src/` is fine._ Those prompts stop reaching you.
-
-Every decision made on your behalf is logged, so you can read back exactly what happened while you slept.
-
-### And it works the goal while you are away
-
-`/dont-kacau-me:dkm-afk <goal>` turns a tab into a peer that ships the goal unattended: it finds the other sessions open
-in the same directory, starts a watch that delivers every new @mention of you on the repository, creates a heartbeat so
-nothing stalls, splits the work and gets on with it.
-
-A teammate's 2am @mention is read and answered on the issue by a peer, not left waiting for you. For a run with no tab
-at all, [`dkm run`](#dkm-run-a-run-that-outlives-its-usage-limit) starts the same kind of work headlessly.
-
-### What about `--dangerously-skip-permissions`?
-
-It solves the same annoyance by removing the question rather than answering it, and a lot of people running several
-sessions already use it. The default grant `dkm init` writes is wide on purpose — it answers what that flag would. What
-stays different is the record, the receipts and the one boundary:
-
-|                                           | `--dangerously-skip-permissions` | A DKM policy                                             |
-| ----------------------------------------- | -------------------------------- | -------------------------------------------------------- |
-| Routine prompts                           | gone                             | gone                                                     |
-| `rm -rf`, `git push`, a migration, `.env` | **also gone**                    | gone under the default grant; any rule can be left on    |
-| A write outside this worktree             | **allowed**                      | **denied** — the one rule `dkm init` does not switch off |
-| What was decided while you slept          | nothing recorded                 | every decision, with the rule that made it               |
-| What lands on the work item               | nothing                          | a receipt with SHAs, changed paths and check results     |
-
-**DKM only decides when Claude Code asks it to.** A session that answers its own prompts never sends DKM the question,
-so a committed policy sits unused. That covers `--dangerously-skip-permissions` and any non-asking `--permission-mode`,
-including one set as `permissions.defaultMode` in your settings, which applies to every session you start.
-
-A session in one of those modes is told so on its first prompt and asked to tell you, rather than looking like a policy
-that is working. Peers, @mentions, receipts and `dkm-afk` work in every mode; only the deciding and the log need an
-asking one.
-
-## The rule that keeps this safe
-
-> Auto-answering may **execute a decision you already made**. It must never **invent one**.
-
-Five blast-radius rules run **before** your allowances. Each is a setting in `[blast]` — `deny`, `ask` or `off` — and
-unconfigured, `outside-worktree` denies while the rest ask. The policy `dkm init` writes is deliberately wide: it
-switches every one of them off except `outside-worktree`.
-
-| If the action would…                                 | Rule               | The grant `dkm init` writes |
-| ---------------------------------------------------- | ------------------ | --------------------------- |
-| Delete data, drop a column, or write a migration     | `data-loss`        | off                         |
-| Post, publish, deploy, send, or open a network write | `egress`           | off                         |
-| Spend money                                          | `money`            | off                         |
-| Touch a lockfile, `package.json`, `.env` or `.dkm/`  | `surface`          | off                         |
-| Write outside the session's own worktree             | `outside-worktree` | **deny**                    |
-| Match a rule you wrote, and trip none of the above   | `[[allow]]`        | allow                       |
-
-The grant is wide because it is the grant someone reaching for `--dangerously-skip-permissions` actually means: every
-prompt answered, inside the worktree. What it keeps over that flag is the log — every decision in `.dkm/decisions.jsonl`
-with the rule that made it — and the one line that stops an agent writing somewhere you cannot see. `outside-worktree`
-is left on, and left one word from `off`, so the choice is visible rather than inherited. Switch any rule back to `ask`
-or `deny` in `[blast]`; `.dkm/` is protected only when `surface` is on.
-
-**The default grant is wide. The difference from skipping permissions is the log, the receipts and the boundary.**
-
-![Six-panel comic: separate worktrees finish at 3am, manual copying loses provenance, the Stop hook writes a measured receipt, a teammate reads it, policy clears routine prompts, and a database migration waits for the sleeping developer](assets/dkm-comic.png)
-
-## Getting started
-
-**You need** [Claude Code](https://code.claude.com/docs/en/plugins) and [Bun](https://bun.sh/). For receipts you also
-need an authenticated [`gh`](https://cli.github.com/) and a repository whose work you track in GitHub issues or PRs; for
-the policy half you need neither.
-
-1. **Install the plugin.**
+1. **Install the plugin**, then restart Claude Code so it loads.
 
    ```bash
    claude plugin marketplace add TolongLabs/dont-kacau-me
    claude plugin install dont-kacau-me@tolonglabs
    ```
 
-1. **Set it up in a repository.** Restart Claude Code so it loads the plugin, then run:
+1. **Set up the repository.** Run `/dont-kacau-me:dkm-init`: it checks the prerequisites and writes `.dkm/policy.toml`,
+   a wide grant. That file is your grant, so read it, delete anything you did not mean to grant and commit it.
 
-   ```text
-   /dont-kacau-me:dkm-init
-   ```
-
-   This checks your prerequisites and writes `.dkm/policy.toml` — a wide grant: every prompt answered, nothing written
-   outside the worktree. Read the file, delete anything you did not mean to grant, and commit it. **That file is your
-   grant**, so treat it as one: never copy a policy whose authority you do not intend to hand over.
-
-   Your prompts stop arriving from here on, and this half works alone, in one session, with no GitHub issue. To publish
-   receipts to a work item, bind once from any tab with `/dont-kacau-me:dkm-bind <number>`; that step needs an
+   The prompts it covers stop arriving from here on, and this half works alone in one session with no GitHub issue. To
+   publish receipts to a work item, bind once from any tab with `/dont-kacau-me:dkm-bind <number>`; that step needs an
    authenticated `gh` and a GitHub remote, and nothing else does.
 
-1. **Keep working — here or from more tabs.** The policy already applies in this session. To run a goal while you are
-   away, open more Claude Code tabs in the same directory — each is a peer that gets its own copy of every event — and
-   run `/dont-kacau-me:dkm-afk <goal>` in one of them.
+1. **Open more tabs** in the same directory, each started the same way. Every tab is a peer that gets its own copy of
+   every event. A second git worktree is for a second branch; a second session does not need one.
+
+1. **Leave.** Run `/dont-kacau-me:dkm-afk <goal>` in one tab. It finds the peer tabs, starts a watch for every new
+   @mention of you on the repository, creates a heartbeat so nothing stalls, splits the work and ships the goal.
+
+1. **Come back.** Run `/dont-kacau-me:dkm-status` to see what happened overnight and every decision made for you.
+
+The plugin's hooks run in every repository on your machine and do nothing in one until `dkm-init` or `dkm-bind` has
+created `.dkm/` there; a session in any other repository sees one line saying so.
+
+## Which permission mode to use
+
+| You start Claude Code with                 | What works                                                                         | What you give up                                                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `--permission-mode manual`                 | Everything: peers, @mentions, receipts, the policy deciding and logging, the fence | Nothing; prompts the policy does not cover still reach you                        |
+| `--dangerously-skip-permissions` or `auto` | Peers, @mentions, receipts and `dkm-afk`                                           | The deciding and the log, and the fence: no decision is made or recorded          |
+| Different modes in different tabs          | Each tab on its own                                                                | Free messaging: Claude Code holds each message until you approve it, so never mix |
+
+**DKM only decides when Claude Code asks it to.** A session in a non-asking mode is told so on its first prompt and
+asked to tell you; [the policy file](policy.md) has the full comparison.
 
 ## The commands
 
@@ -197,128 +102,68 @@ the policy half you need neither.
 Claude Code namespaces a plugin's commands, so every DKM command is typed as `/dont-kacau-me:<command>`, never
 `/<command>`.
 
-The plugin's hooks run in every repository on your machine and do nothing in one until `dkm-init` or `dkm-bind` has
-created `.dkm/` there; a session in any other repository sees one line saying so.
-
 Re-running `dkm-init` is also how you diagnose a repository later. It never replaces a policy that already exists unless
 you pass `--force`.
 
-The close-the-laptop path is not a slash command; it is a process you start yourself, described next.
-
-### `dkm run`: a run that outlives its usage limit
-
-A long unattended run used to end the moment your usage limit was reached. Start it under the supervisor instead:
+The close-the-laptop path is not a slash command; it is a foreground process you start yourself:
 
 ```bash
 bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts run "work through issue 12" -- --effort high
 ```
 
-The run is headless. It starts Claude with `--permission-mode default --permission-prompts none`, so **your policy
-answers every prompt**: what it allows goes through, anything it does not is denied with an instruction not to retry,
-and the run continues. Every decision lands in `.dkm/decisions.jsonl`.
+Your policy answers every prompt, and the run resumes the same session after a usage-limit wait. See
+[`dkm run`](scenarios.md#dkm-run-a-run-that-outlives-its-usage-limit) for the full behaviour.
 
-When a run stops on a limit, it reads the reset time the server reported, waits, and **resumes the same session** so the
-work continues instead of starting over. It waits; it never tries to dodge the limit. Every pause is recorded in
-`.dkm/revivals.jsonl`.
+## How it stays safe
 
-This is the one part of DKM that is not a hook: a foreground process you start instead of `claude`. It is optional, and
-nothing runs in the background when you are not running it.
+> Auto-answering may **execute a decision you already made**. It must never **invent one**.
 
-## What it looks like in practice
+Five blast-radius rules run **before** your allowances:
 
-Six situations DKM is built for. Expand whichever one sounds like your week.
+| If the action would…                                 | Rule               | The grant `dkm init` writes |
+| ---------------------------------------------------- | ------------------ | --------------------------- |
+| Delete data, drop a column, or write a migration     | `data-loss`        | off                         |
+| Post, publish, deploy, send, or open a network write | `egress`           | off                         |
+| Spend money                                          | `money`            | off                         |
+| Touch a lockfile, `package.json`, `.env` or `.dkm/`  | `surface`          | off                         |
+| Write outside the session's own worktree             | `outside-worktree` | **deny**                    |
+| Match a rule you wrote, and trip none of the above   | `[[allow]]`        | allow                       |
 
-<details>
-<summary><b>1. Away for the night — the goal keeps moving</b></summary>
+The grant is wide on purpose: it is the grant someone reaching for `--dangerously-skip-permissions` actually means, and
+`outside-worktree` is the one rule `dkm init` leaves on. Every rule can be set to `deny`, `ask` or `off` in `[blast]`;
+the defaults, the recognised inputs and every key are in [the policy file](policy.md).
 
-Three tabs are open in one directory. In one of them you say:
-
-```text
-/dont-kacau-me:dkm-afk get issue 12 to a pull request
-```
-
-The tab finds its peers, starts the mention watch and a heartbeat, splits the goal and works. At 2am a teammate
-@mentions you on the issue asking whether the fix landed. The watch delivers the line to a peer, which reads the thread
-and replies on the issue with what it did and the commit it landed in.
-
-You read the receipt in the morning. Nobody waited on you.
-
-</details>
-
-<details>
-<summary><b>2. Overnight handoff — skip the 3am ping</b></summary>
-
-A teammate needs to know whether your agent finished before they can start. Without DKM they message you and wait. With
-DKM the work item already carries the head SHA, changed paths and check results, so they read it instead of asking.
-
-You did nothing to publish it. The first bound `Stop` wrote the receipt when the repository actually moved.
-
-</details>
-
-<details>
-<summary><b>3. Contract change — warn a dependent session</b></summary>
-
-Agent A alters a database schema on PR #81. Agent B is building against the old shape in another worktree and would
-normally discover the mismatch at merge, after both sides have paid for it.
-
-```text
-/dont-kacau-me:dkm-follow 81
-```
-
-When #81 moves, B's next turn opens with the contract delta and the exact SHA it was observed at. B adapts before
-writing the wrong code, and can re-read the source rather than trust prose. The two worktrees can even be on different
-developers' machines, provided both have the repository and an authenticated `gh`.
-
-</details>
-
-<details>
-<summary><b>4. Routine prompts — clear the decision queue</b></summary>
-
-Three agents stop on three prompts that need no new judgement: run the formatter, run the tests, write a file under
-`src/`. Each one is a context switch for you.
-
-Write those grants once in `.dkm/policy.toml` and they stop arriving. A fourth prompt that touches a migration still
-waits if you left `data-loss` on, because blast-radius rules run first.
-
-</details>
-
-<details>
-<summary><b>5. Morning review — inspect the decision log</b></summary>
-
-```text
-/dont-kacau-me:dkm-status
-```
-
-Every autonomous decision appears with the rule that produced it, so the audit is a handful of lines rather than three
-transcripts. A decision with no log entry is a bug, and the test suite fails on it.
-
-</details>
-
-<details>
-<summary><b>6. Human judgement — report a blocker</b></summary>
-
-An agent reaches a genuine judgement call: two viable designs, or a requirement nobody wrote down. It should not invent
-your intent.
-
-```text
-/dont-kacau-me:dkm-note blocker Two viable shapes for the retry policy; needs a human call
-```
-
-The blocker rides the next receipt as **reported**, visibly separate from the measured fields, where you and your
-teammates can see it without anyone being interrupted.
-
-</details>
+![Six-panel comic: separate worktrees finish at 3am, manual copying loses provenance, the Stop hook writes a measured receipt, a teammate reads it, policy clears routine prompts, and a database migration waits for the sleeping developer](assets/dkm-comic.png)
 
 ## What DKM cannot do
 
-- **No live mid-turn delivery of receipts.** The mention watch is live — `dkm mentions --watch` prints each new @mention
-  as a poll sees it — but a session still learns about receipts when it starts or receives a prompt, because ingest is a
-  cursored pull on injection hooks.
-- **No cross-machine propagation beyond GitHub.** v1 uses one GitHub comment per work item and each checkout's local
-  `.dkm/` state. Reaching a machine beyond what the repository carries is a v3 concern.
+### Limits you will notice
+
 - **A non-asking permission mode bypasses the policy entirely.** `--dangerously-skip-permissions` and any
   `--permission-mode` that answers its own prompts never emit `PermissionRequest`, so no decision is made or logged. A
   session in one is told so on its first prompt and asked to tell you; everything but the deciding still works.
+- **Peers must share a permission mode.** Claude Code holds a message between sessions whose permission modes differ
+  until you approve it, so start every tab the same way. A tab in `manual` and a tab under
+  `--dangerously-skip-permissions` will prompt you for each message between them.
+- **You cannot @mention yourself.** GitHub does not notify people of their own comments, so a mention only reaches DKM
+  when a teammate writes it.
+- **Only a path-shaped Bash token can trip the fence, and prose that holds one still does.** A token is resolved only
+  when it is absolute, starts with `~` or climbs through `..`, so `//` in a PR body no longer denies the PR, but
+  `/etc/passwd` inside a heredoc still does. Claude Code's own `<tmpdir>/claude-*` scratch is inside the fence.
+- **No live mid-turn delivery of receipts.** The mention watch is live — `dkm mentions --watch` prints each new @mention
+  as a poll sees it — but a session still learns about receipts when it starts or receives a prompt, because ingest is a
+  cursored pull on injection hooks.
+- **The prompt hook never waits on the network.** Receipts and ambient updates are fetched on session start and then at
+  most once every five minutes; mentions are fetched on session start and by the watch. A hook that timed out used to
+  discard everything it had to say, including the permission-mode hint.
+
+### Limits a reviewer should know
+
+<details>
+<summary><b>Seven internal limits</b></summary>
+
+- **No cross-machine propagation beyond GitHub.** v1 uses one GitHub comment per work item and each checkout's local
+  `.dkm/` state. Reaching a machine beyond what the repository carries is a v3 concern.
 - **No inbound consent path.** Another Claude session cannot approve a prompt, and a relayed approval is untrusted.
   `decide()` accepts only permission input and policy, importing neither the pending store nor the GitHub client.
 - **No learning precedent store yet.** v1 authority comes from human-written, committed policy, not accumulated
@@ -331,27 +176,14 @@ teammates can see it without anyone being interrupted.
   for control flow.
 - **Narrow ambient feed.** Ambient ingest sees issues and PRs from the updated-items query, with no base-branch CI
   source. @mentions are not ambient; they are their own tier.
-- **Peers must share a permission mode.** Claude Code holds a message between sessions whose permission modes differ
-  until you approve it, so start every tab the same way. A tab in `manual` and a tab under
-  `--dangerously-skip-permissions` will prompt you for each message between them.
-- **Only a path-shaped Bash token can trip the fence, and prose that holds one still does.** A token is resolved only
-  when it is absolute, starts with `~` or climbs through `..`, so `//` in a PR body no longer denies the PR, but
-  `/etc/passwd` inside a heredoc still does. Claude Code's own `<tmpdir>/claude-*` scratch is inside the fence.
-- **You cannot @mention yourself.** GitHub does not notify people of their own comments, so a mention only reaches DKM
-  when a teammate writes it.
-- **The prompt hook never waits on the network.** Receipts and ambient updates are fetched on session start and then at
-  most once every five minutes; mentions are fetched on session start and by the watch. A hook that timed out used to
-  discard everything it had to say, including the permission-mode hint.
+
+</details>
 
 ## Under the hood
 
-Everything above is what you need to use DKM. The rest is how it works, for anyone extending it or reviewing it.
-Implementation-level contracts, schemas and rationale live in [the technical reference](TRD.md).
-
-## Architecture
-
-DKM coordinates sessions through Claude Code hooks and has no daemon. Hook-driven receipt, ingest and permission work
-never calls a model; the optional usage-limit supervisor is a foreground CLI process.
+DKM coordinates sessions through Claude Code hooks and has no daemon: hook-driven receipt, ingest and permission work
+never calls a model, and the optional usage-limit supervisor is a foreground process. Implementation contracts, schemas
+and rationale live in [the technical reference](TRD.md).
 
 ![DKM architecture: two worktrees feed short-lived hooks, shared DKM state publishes a receipt to a GitHub work item, and policy leaves unmatched prompts to the human](assets/architecture.svg)
 
@@ -359,19 +191,16 @@ And the path one receipt takes, from the turn that produced it to the session th
 
 ![Receipt flow: session A finishes a turn, the Stop hook writes a baseline or tracked delta, and session B pulls that receipt context on its next start or prompt](assets/receipt-flow.svg)
 
-The subsections below stay at the system-narrative level. Implementation contracts and rationale live in
-[the technical reference](TRD.md).
-
 <details>
 <summary><b>The hook lifecycle</b></summary>
 
-| Hook event          | DKM action                                                                | Observable result                                  |
-| ------------------- | ------------------------------------------------------------------------- | -------------------------------------------------- |
-| `Stop`              | Touch the session, then measure a bound worktree                          | Update one receipt only after a tracked delta      |
-| `SessionStart`      | Register the session, pull repository updates, drain this session's queue | Inject context, plus mode and binding hints        |
-| `UserPromptSubmit`  | Register or touch the session, run the same pull rate-limited, drain      | Inject available context on a later prompt         |
-| `PermissionRequest` | Evaluate policy, append a record and emit or defer                        | Execute a prior grant or leave the prompt to human |
-| `SessionEnd`        | Unregister the session and its queue, record the details                  | Leave a diagnostic resume ticket on disk           |
+| Hook event          | DKM action                                                                | Observable result                                                       |
+| ------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `Stop`              | Touch the session, then measure a bound worktree                          | Update one receipt only after a tracked delta                           |
+| `SessionStart`      | Register the session, pull repository updates, drain this session's queue | Inject context and the binding hint; one line if DKM is not set up here |
+| `UserPromptSubmit`  | Register or touch the session, run the same pull rate-limited, drain      | Inject available context, and the permission-mode hint once             |
+| `PermissionRequest` | Evaluate policy, append a record and emit or defer                        | Execute a prior grant or leave the prompt to human                      |
+| `SessionEnd`        | Unregister the session and its queue, record the details                  | Leave a diagnostic resume ticket on disk                                |
 
 - `Stop` ends a response, not the work; after the baseline, unchanged tracked state produces no receipt.
 - DKM registers no worktree lifecycle hook. Explicit binding lets the user choose the GitHub item a worktree owns.
@@ -404,9 +233,19 @@ nothing.
 <details>
 <summary><b>The receipt schema</b></summary>
 
-DKM edits one GitHub comment per work item in place instead of appending comments. Every field carries one of the three
-trust kinds described under [what DKM does about them](#for-the-courier-problem-receipts); `measured` is sourced from
-`git`, `gh` or counted local state, `reported` is asserted by the session about itself, and `unverified` is agent prose.
+A handoff pasted into another session is prose that loses the commit it was true at. DKM instead edits one GitHub
+comment per work item in place, so it never becomes a wall of noise, and labels every field by how much you can trust
+it:
+
+| Kind           | Where it came from                    | What you may do with it               |
+| -------------- | ------------------------------------- | ------------------------------------- |
+| **measured**   | `git` and `gh`, so an actual fact     | Act on it                             |
+| **reported**   | The agent's claim about its own state | Route it, never treat it as repo fact |
+| **unverified** | The agent's prose                     | Display it, nothing more              |
+
+That separation is the point: an agent's opinion can never quietly become a repository fact. In detail, `measured` is
+sourced from `git`, `gh` or counted local state, `reported` is asserted by the session about itself and `unverified` is
+agent prose.
 
 The receipt carries:
 
@@ -426,81 +265,7 @@ injection. The injected warning tells the session to re-read before acting if th
 </details>
 
 <details>
-<summary><b>Policy and authority</b></summary>
-
-> Auto-answering may **execute an existing decision**. It must never **manufacture intent or consent**.
-
-Installing DKM and writing `.dkm/policy.toml` is the prior human grant. DKM may decide within that committed policy in
-the installer's own sessions. `src/decide.ts` receives only the current permission input and parsed policy; it imports
-neither the pending-event store nor the GitHub client.
-
-`PermissionRequest` evaluates:
-
-1. Mechanical blast-radius rules.
-1. Explicit policy allow rules for paths, tools and commands granted in advance.
-1. The default human path for anything unmatched: `ask`.
-
-The rules are mechanical rather than model-assessed because agents are poor at self-assessing risk. `.dkm/` is on the
-surface list because an agent that can edit its grant can widen that authority without anyone deciding to. Each blast
-row's answer is the setting in `[blast]` — `deny`, `ask` or `off` — and a rule set to `off` is not evaluated at all.
-This is the exact form of the plain-English table in [the rule that keeps this safe](#the-rule-that-keeps-this-safe):
-
-| Recognised input                                                           | Result                                                 |
-| -------------------------------------------------------------------------- | ------------------------------------------------------ |
-| A path outside the session worktree                                        | the `outside-worktree` setting — `deny` unconfigured   |
-| Recursive forced removal, destructive SQL or a `migrations`/`drizzle` path | the `data-loss` setting — `ask` unconfigured           |
-| Recognised network, push, deployment, publication or release commands      | the `egress` and `money` settings — `ask` unconfigured |
-| A package manifest, supported lockfile, `.env` file or path under `.dkm/`  | the `surface` setting — `ask` unconfigured             |
-| The first matching policy allow rule, after no blast-radius match          | `allow`                                                |
-| Anything else                                                              | `ask`                                                  |
-
-`dkm init` writes the wide grant: every rule `off` except `outside-worktree`, and one allow rule with `tool = "*"`.
-Delivery follows the same model as the rest of the product — a recipient is a session, not a worktree, so every open tab
-gets its own copy of every event.
-
-On its normal path, every permission evaluation appends to `.dkm/decisions.jsonl` before DKM emits. The status command
-shows the total valid-record count and the five most recent records; a later receipt counts decisions since the prior
-successful emit for that work item.
-
-</details>
-
-<details>
-<summary><b>How the supervisor decides to wait</b></summary>
-
-The supervisor resumes the same session by ID rather than replaying the original prompt, so completed work is not
-repeated. What it does on each outcome:
-
-| Situation                      | Supervisor action                                  |
-| ------------------------------ | -------------------------------------------------- |
-| Reset up to six hours away     | Wait until reset with a 30-second cushion          |
-| Reset more than six hours away | Recheck after six hours                            |
-| Missing or past reset time     | Use capped exponential backoff                     |
-| Genuine error                  | Stop                                               |
-| Limit without a session ID     | Stop because replaying could repeat completed work |
-
-No code path changes credentials or the account, and nothing remains active once the foreground process exits.
-
-</details>
-
-## Configuration
-
-`.dkm/policy.toml` is the only committed file under `.dkm/`; all other DKM state is git-ignored. Blast-radius rules run
-before allow rules, and `[blast]` sets each of them to `deny`, `ask` or `off` — a rule that is `off` is not evaluated.
-Anything unmatched defaults to the human path: `ask`.
-
-| Key or section    | Value shape                      | Controls                                       | Safety behavior                                                  |
-| ----------------- | -------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------- |
-| `version`         | Integer by convention            | Present in the file; the parser ignores it     | Loaded policy remains version 1                                  |
-| `contractGlobs`   | Array of path globs              | Which changed paths form `contractDelta`       | Changes receipt content, not permission decisions                |
-| `[blast].<rule>`  | `deny`, `ask` or `off`           | What each blast-radius rule does when it trips | Nothing configured: `outside-worktree` denies, the rest ask      |
-| `[[allow]].tool`  | Tool name, or `*` for every tool | Tool eligible for a prior allow grant          | Still loses to a blast-radius rule that is on                    |
-| `[[allow]].match` | Optional substring               | Narrows the first command, path or URL input   | First matching allow rule wins                                   |
-| `[[allow]].paths` | Optional array of path globs     | Requires at least one candidate path to match  | An outside-worktree candidate still denies while that rule is on |
-
-## Tech stack
-
-<details>
-<summary><b>The tools and what each one is for</b></summary>
+<summary><b>Tech stack</b></summary>
 
 | Concern                     | Technology                           | Role                                                                     |
 | --------------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
@@ -545,6 +310,8 @@ commands/                        # slash commands
 hooks/hooks.json                 # hook declarations
 docs/
   README.md                      # this file
+  policy.md                      # the policy file reference
+  scenarios.md                   # the six situations and the supervisor
   PRODUCT.md                     # who and why
   PRD.md                         # what
   TRD.md                         # canonical implementation detail
@@ -577,10 +344,23 @@ test/
 
 </details>
 
+## Go deeper
+
+| Read                                           | When                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------- |
+| [The policy file](policy.md)                   | You are changing the grant: blast rules, keys, decision order |
+| [What it looks like in practice](scenarios.md) | You want the six situations and the `dkm run` supervisor      |
+| [The technical reference](TRD.md)              | You need hook contracts, data models, schemas and rationale   |
+| [PRODUCT.md](PRODUCT.md)                       | You want who DKM is for and why                               |
+| [CONTRIBUTING.md](../CONTRIBUTING.md)          | You are setting up to contribute                              |
+| [CHANGELOG.md](../CHANGELOG.md)                | You want the release history and known limitations            |
+| [AGENTS.md](../AGENTS.md)                      | You need the canonical instructions for humans and agents     |
+
 ## Contributing
 
 Issues and pull requests are welcome. [`CONTRIBUTING.md`](../CONTRIBUTING.md) covers setup, the commit convention and
-two non-negotiable test rules: pin the harness's contract and mutation-test every new test.
+two non-negotiable test rules: pin the harness's contract and mutation-test every new test. How branches, commits and
+merges ship is in [`AGENTS.md`](../AGENTS.md#how-work-ships).
 
 - [`AGENTS.md`](../AGENTS.md) — canonical instructions for humans and agentic tools
 - [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) — the Contributor Covenant
@@ -590,22 +370,3 @@ two non-negotiable test rules: pin the harness's contract and mutation-test ever
 ## Licence
 
 [MIT](../LICENSE). Copyright 2026 TolongLabs.
-
-## How work ships
-
-`main` is PR-gated, and there are no stray commits.
-
-1. Branch as `<type>/<short-slug>`.
-1. Commit as `<type>[scope]: <description>`, using a lowercase imperative without a trailing period. Allowed types are:
-
-   - `feat`
-   - `fix`
-   - `refactor`
-   - `docs`
-   - `test`
-   - `chore`
-   - `style`
-   - `perf`
-
-1. Push and open a PR with `gh pr create`.
-1. Merge the squashed head, pinning the verified 40-character head SHA and deleting the branch.

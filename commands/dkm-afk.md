@@ -14,6 +14,10 @@ in your reply.
 Call `ListAgents`. Every other local Claude Code session in this same directory is a peer working on the same goal. If
 there are none, you are working alone and that is fine.
 
+Claude Code holds a message between sessions whose permission modes differ until the human approves it, so peers only
+talk freely when every tab was started the same way. If a `SendMessage` reports it was held, say so in your reply and
+carry on; the human will see the approval prompt.
+
 ## 2. Watch for @mentions
 
 Start a `Monitor` with `persistent: true` and this exact command:
@@ -23,9 +27,10 @@ bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts mentions --watch
 ```
 
 It prints one line whenever a teammate @mentions the human on this repository, and each line reaches you as a
-notification. When one arrives, read the linked issue or pull request, do what it asks if it is within the goal, and
-reply on it with what you did and the commit it landed in. If it is outside the goal, reply that the human is away and
-it is queued.
+notification. GitHub does not notify people of their own comments, so the human @mentioning themselves will never arrive
+here; a teammate's mention will. When one arrives, read the linked issue or pull request, do what it asks if it is
+within the goal, and reply on it with what you did and the commit it landed in. If it is outside the goal, reply that
+the human is away and it is queued.
 
 If the command exits at once saying `gh` is not authenticated or there is no GitHub remote, say so in one line and skip
 this step; nothing else depends on it.

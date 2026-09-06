@@ -38,15 +38,28 @@ export function preflight(root: string): Check[] {
   const auth = gh.ok ? run('gh', ['auth', 'status'], root) : { ok: false, out: '' }
   checks.push({ name: 'gh authenticated', ok: auth.ok, detail: auth.ok ? 'ok' : 'run: gh auth login' })
 
-  const remote = gh.ok ? run('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], root) : null
-  const hasRemote = remote?.ok === true && remote.out.length > 0
-  checks.push({
-    name: 'GitHub remote',
-    ok: hasRemote,
-    detail: hasRemote ? remote.out : 'receipts need one; the policy half works without it'
-  })
+  checks.push(remoteCheck(root))
 
   return checks
+}
+
+/**
+ * Answered by git, locally. Asking gh over the network took long enough on one machine to time
+ * out, which reported a repository with a remote as having none and told the user to add one.
+ */
+export function remoteCheck(root: string): Check {
+  const remote = run('git', ['remote', 'get-url', 'origin'], root)
+  const url = remote.out
+  const isGitHub = remote.ok && /github\.com[/:]/.test(url)
+  return {
+    name: 'GitHub remote',
+    ok: isGitHub,
+    detail: isGitHub
+      ? url
+      : remote.ok
+        ? `${url} is not GitHub; receipts and mentions need GitHub`
+        : 'none; receipts and mentions need one, the policy half does not'
+  }
 }
 
 const SOURCE_DIRS = ['src', 'lib', 'app']

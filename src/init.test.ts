@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { decide } from './decide'
-import { type Check, gitCheck, runInit, suggestPolicy } from './init'
+import { type Check, gitCheck, remoteCheck, runInit, suggestPolicy } from './init'
 import { loadPolicy } from './policy'
 import type { DecisionInput } from './types'
 
@@ -101,5 +102,21 @@ test('a repository with no git is told to run git init', () => {
     expect(git.detail).toContain('git init')
   } finally {
     rmSync(bare, { recursive: true, force: true })
+  }
+})
+
+test('the remote check is answered by git, locally, and knows GitHub from not-GitHub', () => {
+  // Asking gh over the network timed out on one machine and told a user with a remote to add one.
+  const repo = mkdtempSync(join(tmpdir(), 'dkm-remote-'))
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: repo })
+    expect(remoteCheck(repo).ok).toBe(false)
+    spawnSync('git', ['remote', 'add', 'origin', 'https://gitlab.com/o/r.git'], { cwd: repo })
+    expect(remoteCheck(repo).ok).toBe(false)
+    expect(remoteCheck(repo).detail).toContain('not GitHub')
+    spawnSync('git', ['remote', 'set-url', 'origin', 'git@github.com:o/r.git'], { cwd: repo })
+    expect(remoteCheck(repo)).toEqual({ name: 'GitHub remote', ok: true, detail: 'git@github.com:o/r.git' })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
   }
 })

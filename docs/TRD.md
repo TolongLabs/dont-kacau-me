@@ -50,7 +50,7 @@ The registered commands in `hooks/hooks.json` are:
 | ------------------- | --------------------------------- | ------- | ------------------------ |
 | `PermissionRequest` | `src/hooks/permission-request.ts` | 5s      | None                     |
 | `Stop`              | `src/hooks/stop.ts`               | 20s     | None                     |
-| `SessionStart`      | `src/hooks/session-start.ts`      | 15s     | `startup\|resume\|clear` |
+| `SessionStart`      | `src/hooks/session-start.ts`      | 20s     | `startup\|resume\|clear` |
 | `UserPromptSubmit`  | `src/hooks/user-prompt-submit.ts` | 15s     | None                     |
 | `SessionEnd`        | `src/hooks/session-end.ts`        | 10s     | None                     |
 

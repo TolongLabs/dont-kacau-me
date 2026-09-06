@@ -12,7 +12,7 @@ import {
   writeCursors,
   writePending
 } from '../store'
-import type { PendingEvent, Receipt, TrackingTier, WorkItemRef } from '../types'
+import type { CursorFile, PendingEvent, Receipt, TrackingTier, WorkItemRef } from '../types'
 
 function short(sha: string): string {
   return sha.slice(0, 7)
@@ -95,18 +95,27 @@ function tierFor(recipient: Recipient, nodeId: string): { tier: TrackingTier; it
  * `tierFor()` while being unreachable in practice. The current repository is resolved once, and
  * only when some recipient actually wants ambient.
  */
-function trackedRepoIds(root: string, recipients: Recipient[]): string[] {
+function trackedRepoIds(root: string, recipients: Recipient[], cursors: CursorFile): string[] {
   const ids = new Set<string>()
   for (const r of recipients) {
     if (r.bound !== null) ids.add(r.bound.repoNodeId)
     for (const f of r.followed) ids.add(f.repoNodeId)
   }
   if (ids.size === 0 && recipients.some((r) => r.ambient)) {
-    const current = repoNodeId(root)
-    if (current !== null) ids.add(current)
+    // Resolved once and cached. Every session registers ambient, so without the cache this was a
+    // network call on every prompt in every repository with a remote.
+    const cached = cursors.cursors[REPO_ID_KEY]
+    const current = cached ?? repoNodeId(root)
+    if (current !== null) {
+      cursors.cursors[REPO_ID_KEY] = current
+      ids.add(current)
+    }
   }
   return [...ids]
 }
+
+const REPO_ID_KEY = 'repo-id'
+const INGESTED_AT_KEY = 'ingested-at'
 
 /**
  * Only a bound or followed item is worth a second `gh` call. Ambient is a headline and a URL by
@@ -136,14 +145,28 @@ function receiptFor(root: string, item: WorkItemRef, cache: Map<string, Receipt 
  * and lets the remaining events arrive as headlines: a late delta is worth more than a hook the
  * harness kills, and draining what is already pending is a local read that always happens.
  */
-export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: () => number = Date.now): void {
+/**
+ * `withMentions` is false on UserPromptSubmit. The notifications feed is one more network call on
+ * the hook that runs on every prompt, and a session that wants mentions live has a Monitor on
+ * `dkm mentions --watch`; SessionStart still fetches them so a fresh session starts informed.
+ */
+export function ingest(
+  root: string,
+  minIntervalMs = 0,
+  budgetMs = 8000,
+  now: () => number = Date.now,
+  withMentions = true
+): void {
   const startedAt = now()
   const receipts = new Map<string, Receipt | null>()
   const cursors = readCursors(root)
+  // The throttle runs before anything that can touch the network. It used to sit inside the
+  // per-repository loop, after the repository id had already been fetched.
+  const last = cursors.cursors[INGESTED_AT_KEY]
+  if (minIntervalMs > 0 && last !== undefined && Date.now() - Date.parse(last) < minIntervalMs) return
   const all = recipients(root)
-  for (const repoNodeId of trackedRepoIds(root, all)) {
+  for (const repoNodeId of trackedRepoIds(root, all, cursors)) {
     const since = cursors.cursors[repoNodeId] ?? new Date(Date.now() - 86_400_000).toISOString()
-    if (minIntervalMs > 0 && Date.now() - Date.parse(since) < minIntervalMs) continue
     if (now() - startedAt > budgetMs) break
     const events = fetchSince(root, since)
     for (const ev of events) {
@@ -169,6 +192,7 @@ export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: ()
     // A teammate calling the human out is the one thing worth reading before anything else, so
     // it is its own tier and goes to every session. The notifications feed is account-wide, so
     // only mentions on this repository are queued here.
+    if (!withMentions) continue
     const mentionKey = `mentions:${repoNodeId}`
     const mentionSince = cursors.cursors[mentionKey] ?? new Date(Date.now() - 86_400_000).toISOString()
     if (now() - startedAt > budgetMs) break
@@ -190,6 +214,7 @@ export function ingest(root: string, minIntervalMs = 0, budgetMs = 8000, now: ()
     }
     cursors.cursors[mentionKey] = new Date().toISOString()
   }
+  cursors.cursors[INGESTED_AT_KEY] = new Date().toISOString()
   writeCursors(root, cursors)
 }
 

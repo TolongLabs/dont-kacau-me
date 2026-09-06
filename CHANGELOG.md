@@ -8,6 +8,19 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.5.4] — 2026-09-07
+
+### Fixed
+
+- **Command patterns no longer match prose.** `money`, `egress` and the `rm`/SQL half of `data-loss` are matched only
+  inside a `Bash` command. A file body that mentioned `deploy`, a todo naming `git push` or a note containing
+  `delete from` used to return `ask`, taking back a prompt the policy had granted away. Closes #29.
+
+### Changed
+
+- The README is a quick start again: install is on line 57, and the policy reference and the six scenarios moved to
+  `docs/policy.md` and `docs/scenarios.md`.
+
 ## [0.5.3] — 2026-09-07
 
 Found by the maintainer's second run as a new user, in an AFK goal that shipped code but not its pull request.
@@ -255,6 +268,7 @@ Initial implementation included:
 It was verified against a fake `gh` in a test harness only.
 
 [unreleased]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.3.0...HEAD
+[0.5.4]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/TolongLabs/dont-kacau-me/compare/v0.5.0...v0.5.1

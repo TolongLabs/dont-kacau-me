@@ -156,6 +156,27 @@ test('file content is not a path, however it reads', () => {
   expect(decide(input, EMPTY_POLICY).trip).toBe(null)
 })
 
+test('a command pattern in prose is not a command', () => {
+  // Issue #29: each of these returned ask for a prompt the policy had granted away.
+  const write = tool('Write', { file_path: `${WORKTREE}/src/deploy.md`, content: 'run vercel deploy, then git push' })
+  expect(decide(write, EMPTY_POLICY).trip).toBe(null)
+  const todo = tool('TodoWrite', { todos: [{ content: 'npm publish after the release notes' }] })
+  expect(decide(todo, EMPTY_POLICY).trip).toBe(null)
+  const note = tool('Write', { file_path: `${WORKTREE}/notes.md`, content: 'never delete from users; rm -rf is worse' })
+  expect(decide(note, EMPTY_POLICY).trip).toBe(null)
+})
+
+test('the same patterns in a bash command still trip', () => {
+  expect(decide(bash('vercel deploy --prod'), EMPTY_POLICY).trip).toBe('money')
+  expect(decide(bash('git push origin main'), EMPTY_POLICY).trip).toBe('egress')
+  expect(decide(bash('rm -rf build'), EMPTY_POLICY).trip).toBe('data-loss')
+  expect(decide(bash('psql -c "delete from users"'), EMPTY_POLICY).trip).toBe('data-loss')
+})
+
+test('a migrations path still trips data-loss for a non-bash tool', () => {
+  expect(decide(write(`${WORKTREE}/db/migrations/0001_init.sql`), EMPTY_POLICY).trip).toBe('data-loss')
+})
+
 test('a structured path field outside the worktree is still denied', () => {
   expect(decide(write('/etc/passwd'), EMPTY_POLICY).decision).toBe('deny')
   expect(decide(tool('NotebookEdit', { notebook_path: '/tmp/x.ipynb' }), EMPTY_POLICY).decision).toBe('deny')

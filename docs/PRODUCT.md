@@ -89,6 +89,19 @@ in that installer's own sessions, and it writes down every call it makes.
 
 v1 is the whole product for one developer with several worktrees. Everything above it is an expansion.
 
+## Optional Intake-to-Release Workflow
+
+**Owner-Approved Extension, 2026-09-30.** A repository may opt into a shared intake-to-delivery contract: per-request
+agent verdicts, tracked implementation evidence and separately gated release preparation/publication. Project judgment,
+verification commands and version conventions belong to a thin repo contract, not hard-coded product rules in DKM.
+
+- The workflow is disabled by default and preserves existing coordination behavior.
+- It adds deterministic records, CLI operations and an operating command for an existing lead agent, not an agent
+  scheduler.
+- Reported decisions do not become measured facts or permission grants; release publication is a separate opt-in.
+
+See the [approved workflow specification](superpowers/specs/2026-09-30-intake-release-workflow.md).
+
 ## Who This Is Not For
 
 - A developer running a single Claude Code session. There is nothing to coordinate

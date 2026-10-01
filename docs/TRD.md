@@ -746,6 +746,34 @@ The implementation uses these concrete keys:
 - tool-use ID deduplication
 - a delivery acknowledgement protocol
 
+## Optional Intake-to-Release Contract
+
+**Approved Extension, 2026-09-30.** The optional subsystem is separate from permission policy and the technical receipt.
+See the [workflow specification](superpowers/specs/2026-09-30-intake-release-workflow.md) for the product boundary.
+
+- Committed `workflow.toml` resolves through `dkmPath()` beside shared policy; no config means disabled.
+- Versioned workflow records are keyed by explicit `repoNodeId` and `itemNodeId`, not directory/branch names. Short
+  state write guards and atomic replacement protect these records only; corrupt state fails visibly instead of
+  resetting.
+- Explicit sync fetches paginated comments; a comment fingerprint binds each agent review to the exact observed version.
+  An edit makes its prior review stale. Request identity is comment ID plus an agent-supplied key, never prose equality.
+- Structured verdicts are reported judgments. PR/check adapters retain failed/malformed/empty evidence as unavailable,
+  never successful verification. Local command hints are instructions to normal host tools, not subprocess execution.
+- Explicit verdict publication has a separate marker and state fingerprint; it does not change `Receipt` or Stop's
+  existing SHA/check/blocker deduplication. Only schema-approved summary fields are rendered, not raw comment bodies. A
+  `.publish.lock` spans explicit publication; a successful response updates only publication metadata against freshly
+  read state, preserving concurrent requests. Lost replies recover the marker only for the authenticated GitHub author;
+  ambiguous own markers fail visibly. Other authors' markers remain intake.
+- A release plan queries required checks on the exact current SHA and uses the last stored PR observations. Publication
+  refreshes intake/PR evidence before planning. It separately requires config opt-in, explicit approval, a clean target
+  branch and policy allow for the generated operation. Each additional `decide()` call is appended to the normal audit
+  log; no workflow prose enters policy. Required checks must succeed for the implementation and release SHAs. Stale
+  review/head or unresolved accepted work blocks publication. No hook publishes releases.
+- Injection hooks may add a bounded local summary when enabled; they do not start another fetch/poller/model. The lead
+  operates the feature through its command contract under normal permissions.
+- The feature-branch TolongLarp pilot invokes the source CLI explicitly; no installed-cache edit or distribution release
+  occurs before AlaskanTuna approval. Branch-local manifest version preparation is not publication.
+
 ## Known Implementation Limits
 
 - **Initial Baseline Write.** The first bound `Stop` publishes even when no worktree state changed during that turn.
@@ -781,22 +809,27 @@ The implementation uses these concrete keys:
 
 The repository's test sources currently cover:
 
-| Test Source                      | Verified Behavior                                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `src/decide.test.ts`             | Outside, data-loss, egress and surface trips; allow rules; default ask; static consent boundary        |
-| `src/git.test.ts`                | Head/base resolution, detached-head detection, changed-path parsing and contract-glob behavior         |
-| `src/github.test.ts`             | Exact GitHub argv, response narrowing, receipt upsert and work-item resolution                         |
-| `src/receipt.test.ts`            | Receipt round-trip, invalid/truncated input and head/blocker/check fingerprint inputs                  |
-| `src/store.test.ts`              | Defaults, corrupt input, atomic JSON writes, pending drain, JSONL filtering and the session registry   |
-| `src/policy.test.ts`             | `[blast]` defaults, per-rule settings, ignored typos and table boundary behavior                       |
-| `src/init.test.ts`               | The generated grant verified through `loadPolicy` and `decide`, `--force`, peers output and `gitCheck` |
-| `src/hooks/inject.test.ts`       | Receipt memoization, wall-clock budget, per-session delivery and mention filtering                     |
-| `src/hooks/unbound-hint.test.ts` | Unbound-worktree and permission-mode hints, gated on the policy file                                   |
-| `src/revive*.test.ts`            | Classification, reset parsing, wait calculation, resume argv, terminal paths and revival logging       |
-| `test/cli.test.ts`               | Explicit bind/follow, report commands, mentions, status and invalid input                              |
-| `test/e2e.test.ts`               | Hook output, logging, baseline/idempotency, per-recipient delivery and fail-open paths                 |
-| `test/plugin.test.ts`            | Manifest inventory, handler paths, command roots, version alignment and licence                        |
-| `test/worktree.test.ts`          | Shared bindings and policy resolution across a linked worktree                                         |
+| Test Source                      | Verified Behavior                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `src/decide.test.ts`             | Outside, data-loss, egress and surface trips; allow rules; default ask; static consent boundary         |
+| `src/git.test.ts`                | Head/base resolution, detached-head detection, changed-path parsing and contract-glob behavior          |
+| `src/github.test.ts`             | Exact GitHub argv, response narrowing, receipt upsert and work-item resolution                          |
+| `src/receipt.test.ts`            | Receipt round-trip, invalid/truncated input and head/blocker/check fingerprint inputs                   |
+| `src/store.test.ts`              | Defaults, corrupt input, atomic JSON writes, pending drain, JSONL filtering and the session registry    |
+| `src/policy.test.ts`             | `[blast]` defaults, per-rule settings, ignored typos and table boundary behavior                        |
+| `src/init.test.ts`               | The generated grant verified through `loadPolicy` and `decide`, `--force`, peers output and `gitCheck`  |
+| `src/hooks/inject.test.ts`       | Receipt memoization, wall-clock budget, per-session delivery and mention filtering                      |
+| `src/hooks/unbound-hint.test.ts` | Unbound-worktree and permission-mode hints, gated on the policy file                                    |
+| `src/revive*.test.ts`            | Classification, reset parsing, wait calculation, resume argv, terminal paths and revival logging        |
+| `test/cli.test.ts`               | Explicit bind/follow, report commands, mentions, status and invalid input                               |
+| `test/e2e.test.ts`               | Hook output, logging, baseline/idempotency, per-recipient delivery and fail-open paths                  |
+| `test/plugin.test.ts`            | Manifest inventory, handler paths, command roots, version alignment and licence                         |
+| `test/worktree.test.ts`          | Shared bindings and policy resolution across a linked worktree                                          |
+| `src/workflow-store.test.ts`     | Explicit opt-in, corrupt-state preservation, atomic guarded updates and shared-worktree state           |
+| `src/workflow.test.ts`           | Paginated current-source verdicts, supersession, escaping, publication recovery and nested policy audit |
+| `src/workflow-release.test.ts`   | Observed PR/check evidence, exact target checks, default-off publication and policy/approval/tag gates  |
+| `test/workflow-cli.test.ts`      | Explicit workflow config/binding/input validation and unchanged legacy status                           |
+| `test/workflow-hook.test.ts`     | Feature-off compatibility, local operating hint and optional-config defect isolation                    |
 
 The source does **not** currently contain:
 

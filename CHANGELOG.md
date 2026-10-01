@@ -8,6 +8,25 @@ those are called out under **Changed** with the word **Breaking**.
 
 ## [Unreleased]
 
+## [0.6.0] — Pending Review
+
+### Added
+
+- Optional intake-to-release workflow with a separate committed project contract, per-request product judgments,
+  edited-source re-review, explicit supersession, reported delivery and measured PR/check observations.
+- Human verdict tables with independent idempotent publication, separate from technical receipt/permission counts.
+- Exact-head release plans and separately gated publication: disabled default, explicit approval, current source, clean
+  target branch, required hosted checks and normal permission policy. No model/test/scheduler on hook paths.
+- Local workflow injection hint and an operating command for the existing lead agent. A branch-source TolongLarp pilot
+  does not replace installed plugin cache or publish a distribution version before review.
+
+### Fixed
+
+- GitHub release mutations are classified as egress as well as creation's existing money classification, so nested
+  workflow publication cannot hide a policy deny/ask.
+
+**Status:** Branch-local version preparation for AlaskanTuna review, not a published tag or plugin release.
+
 ## [0.5.4] — 2026-09-07
 
 ### Fixed

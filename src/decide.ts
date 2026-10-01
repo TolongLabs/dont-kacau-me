@@ -213,7 +213,11 @@ function isEgress(input: DecisionInput): boolean {
     if (/\bgit\s+push\b/i.test(str)) return true
     if (/\b(bun|npm)\s+run\s+deploy\b/i.test(str)) return true
     if (/\bdeploy\b/i.test(str) && !/\bvercel\s+deploy\b/i.test(str)) return true
-    if (/\bgh\s+(pr\s+create|issue\s+create|pr\s+comment|issue\s+comment)\b/i.test(str)) {
+    if (
+      /\bgh\s+(pr\s+create|issue\s+create|pr\s+comment|issue\s+comment|release\s+(create|edit|upload|delete))\b/i.test(
+        str
+      )
+    ) {
       return true
     }
     if (/\bgh\s+api\s+.*?\s-X\s+(POST|PATCH|PUT|DELETE)\b/i.test(str)) return true

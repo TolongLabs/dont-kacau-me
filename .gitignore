@@ -3,6 +3,7 @@ dist
 .env
 *.log
 
-# Machine state is disposable; policy.toml is the human grant and is committed.
+# Machine state is disposable; policy and optional workflow contracts are committed.
 .dkm/*
 !.dkm/policy.toml
+!.dkm/workflow.toml

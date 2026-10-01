@@ -5,7 +5,14 @@ import { parseReceipt } from './receipt'
 import type { WorkItemRef } from './types'
 import { fetchWorkflowComments, workflowViewer, writeWorkflowComment } from './workflow-github'
 import { loadWorkflowConfig, object, readWorkflow, updateWorkflow, workflowPath } from './workflow-store'
-import { decisions, deliveries, type RequestInput, type WorkflowRequest, type WorkflowState } from './workflow-types'
+import {
+  decisions,
+  deliveries,
+  type RequestHistory,
+  type RequestInput,
+  type WorkflowRequest,
+  type WorkflowState
+} from './workflow-types'
 
 export const WORKFLOW_MARKER = '<!-- dkm:workflow v1 -->'
 
@@ -21,6 +28,7 @@ export function requestId(request: Pick<RequestInput, 'commentId' | 'key'>): str
 }
 
 export function staleRequest(state: WorkflowState, request: WorkflowRequest): boolean {
+  if (request.decision === 'superseded') return false
   const source = state.comments.find((comment) => comment.id === request.commentId)
   return !source || source.deleted || source.fingerprint !== request.reviewedFrom
 }
@@ -30,6 +38,13 @@ export function syncWorkflow(root: string, item: WorkItemRef): WorkflowState {
   const state = readWorkflow(root, item)
   const all = fetchWorkflowComments(root, item)
   let publication = state.publication
+  if (publication !== null) {
+    const remote = all.find((comment) => comment.id === publication?.commentId)
+    publication = remote
+      ? { commentId: remote.id, fingerprint: createHash('sha256').update(remote.body).digest('hex') }
+      : null
+    if (publication?.fingerprint === state.publication?.fingerprint) publication = state.publication
+  }
   if (publication === null && all.some((comment) => comment.body.startsWith(WORKFLOW_MARKER))) {
     const viewer = workflowViewer(root)
     const own = all.filter((comment) => comment.author === viewer && comment.body.startsWith(WORKFLOW_MARKER))
@@ -118,6 +133,10 @@ function validateRequest(value: unknown): RequestInput {
   return value as RequestInput
 }
 
+function snapshot({ history: _history, ...request }: WorkflowRequest): RequestHistory {
+  return request
+}
+
 export function recordRequest(root: string, item: WorkItemRef, raw: unknown): WorkflowState {
   requireWorkflow(root)
   const input = validateRequest(raw)
@@ -128,17 +147,7 @@ export function recordRequest(root: string, item: WorkItemRef, raw: unknown): Wo
     throw new Error('Source comment changed; review its current version before recording a decision.')
   return updateWorkflow(root, item, state.revision, (next) => {
     const previous = next.requests.find((request) => requestId(request) === requestId(input))
-    const history = previous
-      ? [
-          ...previous.history,
-          {
-            reviewedFrom: previous.reviewedFrom,
-            decision: previous.decision,
-            delivery: previous.delivery,
-            why: previous.why
-          }
-        ]
-      : []
+    const history = previous ? [...previous.history, snapshot(previous)] : []
     const observation =
       previous && previous.implementationHead === input.implementationHead && previous.prNumber === input.prNumber
         ? previous.observation
@@ -147,7 +156,7 @@ export function recordRequest(root: string, item: WorkItemRef, raw: unknown): Wo
       const old = next.requests.find((request) => requestId(request) === input.supersedes)
       if (!old || requestId(old) === requestId(input))
         throw new Error('Superseded request does not exist or points to itself.')
-      old.history.push({ reviewedFrom: old.reviewedFrom, decision: old.decision, delivery: old.delivery, why: old.why })
+      old.history.push(snapshot(old))
       old.decision = 'superseded'
     }
     next.requests = next.requests.filter((request) => requestId(request) !== requestId(input))
@@ -194,7 +203,9 @@ export function renderWorkflow(state: WorkflowState): string {
   for (const request of state.requests) {
     const source = state.comments.find((comment) => comment.id === request.commentId)
     const stale = staleRequest(state, request)
-    const status = source?.deleted ? 'Source removed' : stale ? 'Needs re-review' : request.decision
+    const status = [request.decision, source?.deleted ? 'Source removed' : stale ? 'Needs re-review' : '']
+      .filter(Boolean)
+      .join(' · ')
     lines.push(
       `| ${cell(request.summary)} (${cell(requestId(request))}) | ${status} | ${cell(request.why)} | ${cell(request.phase)} | ${request.delivery} (reported) | ${request.link || '—'} | ${verification(request)} |`
     )

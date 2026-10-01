@@ -36,10 +36,45 @@ export function allowWorkflowOperation(root: string, argv: string[]): void {
     )
 }
 
+export function workflowRepository(root: string, item: WorkItemRef): string {
+  const repoRun = runner.run(root, ['repo', 'view', '--json', 'id,nameWithOwner'])
+  let repo: unknown
+  let bound: unknown
+  try {
+    repo = repoRun.ok ? JSON.parse(repoRun.stdout) : null
+  } catch {
+    repo = null
+  }
+  if (
+    !object(repo) ||
+    repo.id !== item.repoNodeId ||
+    typeof repo.nameWithOwner !== 'string' ||
+    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo.nameWithOwner)
+  )
+    throw new Error(
+      'Selected GitHub repository does not match the bound repository; no workflow operation was attempted.'
+    )
+  const name = repo.nameWithOwner
+  const itemRun = runner.run(root, ['api', `repos/${name}/issues/${item.number}`])
+  try {
+    bound = itemRun.ok ? JSON.parse(itemRun.stdout) : null
+  } catch {
+    bound = null
+  }
+  if (
+    !object(bound) ||
+    bound.node_id !== item.itemNodeId ||
+    (object(bound.pull_request) ? 'pr' : 'issue') !== item.kind
+  )
+    throw new Error('GitHub item does not match the bound work item; no workflow operation was attempted.')
+  return name
+}
+
 export function fetchWorkflowComments(root: string, item: WorkItemRef): IntakeComment[] {
+  const repo = workflowRepository(root, item)
   const run = runner.run(root, [
     'api',
-    `repos/{owner}/{repo}/issues/${item.number}/comments?per_page=100`,
+    `repos/${repo}/issues/${item.number}/comments?per_page=100`,
     '--paginate',
     '--slurp'
   ])
@@ -93,10 +128,9 @@ export function workflowViewer(root: string): string {
 }
 
 export function writeWorkflowComment(root: string, item: WorkItemRef, body: string, commentId: string | null): string {
+  const repo = workflowRepository(root, item)
   const path =
-    commentId === null
-      ? `repos/{owner}/{repo}/issues/${item.number}/comments`
-      : `repos/{owner}/{repo}/issues/comments/${commentId}`
+    commentId === null ? `repos/${repo}/issues/${item.number}/comments` : `repos/${repo}/issues/comments/${commentId}`
   const argv = ['api', path, '-X', commentId === null ? 'POST' : 'PATCH', '--input', '-']
   allowWorkflowOperation(root, argv)
   const run = runner.run(root, argv, JSON.stringify({ body }))

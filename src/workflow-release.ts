@@ -6,7 +6,7 @@ import { resolveHead } from './git'
 import { runner } from './github'
 import type { CheckResult, WorkItemRef } from './types'
 import { requestId, requireWorkflow, staleRequest, syncWorkflow } from './workflow'
-import { allowWorkflowOperation } from './workflow-github'
+import { allowWorkflowOperation, workflowRepository } from './workflow-github'
 import { loadWorkflowConfig, object, readWorkflow, updateWorkflow } from './workflow-store'
 import type { PullObservation, ReleasePlan, WorkflowRequest, WorkflowState } from './workflow-types'
 
@@ -18,10 +18,10 @@ function parse(raw: string): unknown {
   }
 }
 
-function checksAt(root: string, head: string): { available: boolean; checks: CheckResult[] } {
+function checksAt(root: string, repo: string, head: string): { available: boolean; checks: CheckResult[] } {
   const run = runner.run(root, [
     'api',
-    `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`,
+    `repos/${repo}/commits/${head}/check-runs?per_page=100`,
     '--paginate',
     '--slurp'
   ])
@@ -53,9 +53,17 @@ function checksAt(root: string, head: string): { available: boolean; checks: Che
   return { available: true, checks }
 }
 
-function pullAt(root: string, request: WorkflowRequest): PullObservation | null {
+function pullAt(root: string, repo: string, request: WorkflowRequest): PullObservation | null {
   if (request.prNumber === null) return null
-  const run = runner.run(root, ['pr', 'view', String(request.prNumber), '--json', 'state,headRefOid,mergeCommit,url'])
+  const run = runner.run(root, [
+    'pr',
+    'view',
+    String(request.prNumber),
+    '--repo',
+    repo,
+    '--json',
+    'state,headRefOid,mergeCommit,url'
+  ])
   const value = run.ok ? parse(run.stdout) : null
   if (
     !object(value) ||
@@ -70,7 +78,7 @@ function pullAt(root: string, request: WorkflowRequest): PullObservation | null 
     /^[a-f0-9]{40}$/.test(value.mergeCommit.oid)
       ? value.mergeCommit.oid
       : null
-  const checks = checksAt(root, value.headRefOid)
+  const checks = checksAt(root, repo, value.headRefOid)
   return {
     head: value.headRefOid,
     mergedHead,
@@ -84,7 +92,8 @@ function pullAt(root: string, request: WorkflowRequest): PullObservation | null 
 export function observeWorkflow(root: string, item: WorkItemRef): WorkflowState {
   requireWorkflow(root)
   const state = readWorkflow(root, item)
-  const observed = new Map(state.requests.map((request) => [requestId(request), pullAt(root, request)]))
+  const repo = workflowRepository(root, item)
+  const observed = new Map(state.requests.map((request) => [requestId(request), pullAt(root, repo, request)]))
   return updateWorkflow(root, item, state.revision, (next) => {
     for (const request of next.requests) request.observation = observed.get(requestId(request)) ?? null
   })
@@ -109,6 +118,7 @@ export function planRelease(root: string, item: WorkItemRef, version: string): R
     throw new Error('Use a stable semantic version such as 1.1.0; version intent is not inferred from comments.')
   const config = loadWorkflowConfig(root)
   const state = readWorkflow(root, item)
+  const repo = workflowRepository(root, item)
   const head = resolveHead(root)
   const blockers: string[] = []
   if (!config.release.enabled) blockers.push('Release publication is disabled.')
@@ -118,7 +128,7 @@ export function planRelease(root: string, item: WorkItemRef, version: string): R
   if (config.release.requiredChecks.length === 0)
     blockers.push('Required hosted checks must be configured; no checks is not verification.')
   if (config.release.requiredChecks.length > 0) {
-    const target = checksAt(root, head)
+    const target = checksAt(root, repo, head)
     if (!target.available) blockers.push('Release head hosted checks are unavailable.')
     for (const name of config.release.requiredChecks) {
       const matches = target.checks.filter((check) => check.name === name)
@@ -132,7 +142,8 @@ export function planRelease(root: string, item: WorkItemRef, version: string): R
     if (!source.deleted && !state.requests.some((request) => request.commentId === source.id))
       blockers.push(`Comment ${source.id} is untriaged.`)
   for (const request of state.requests) {
-    if (staleRequest(state, request)) blockers.push(`Request ${requestId(request)} needs current-source re-review.`)
+    if (request.decision !== 'superseded' && staleRequest(state, request))
+      blockers.push(`Request ${requestId(request)} needs current-source re-review.`)
     if (request.decision === 'needs-owner') blockers.push(`Request ${requestId(request)} needs owner judgment.`)
   }
   for (const request of accepted) {
@@ -170,28 +181,38 @@ export function planRelease(root: string, item: WorkItemRef, version: string): R
     '',
     ...blockers.map((blocker) => `Blocked: ${blocker}`)
   ].join('\n')
-  return { version, tag, head, notes, blockers }
+  return { version, tag, head, revision: state.revision, notes, blockers }
 }
 
-function existingRelease(root: string, tag: string): { url: string } | null {
-  const run = runner.run(root, ['release', 'view', tag, '--json', 'tagName,targetCommitish,url'])
+function existingRelease(root: string, repo: string, tag: string): { url: string } | null {
+  const run = runner.run(root, [
+    'release',
+    'view',
+    tag,
+    '--repo',
+    repo,
+    '--json',
+    'tagName,targetCommitish,url,isDraft'
+  ])
   if (!run.ok) {
-    if (run.stderr.includes('HTTP 404')) return null
+    if (run.stderr.includes('HTTP 404') || run.stderr.trim() === 'release not found') return null
     throw new Error('Could not verify whether the release already exists; no publication was attempted.')
   }
   const value = parse(run.stdout)
   if (
     !object(value) ||
     value.tagName !== tag ||
+    typeof value.isDraft !== 'boolean' ||
     typeof value.url !== 'string' ||
     !value.url.startsWith('https://github.com/')
   )
     throw new Error('Malformed existing release observation.')
+  if (value.isDraft) throw new Error('Existing release is a draft, not a published release; inspect it explicitly.')
   return { url: value.url }
 }
 
-function existingTag(root: string, tag: string): string | null {
-  let run = runner.run(root, ['api', `repos/{owner}/{repo}/git/ref/tags/${tag}`])
+function existingTag(root: string, repo: string, tag: string): string | null {
+  let run = runner.run(root, ['api', `repos/${repo}/git/ref/tags/${tag}`])
   if (!run.ok) {
     if (run.stderr.includes('HTTP 404')) return null
     throw new Error('Could not verify the existing tag; no publication was attempted.')
@@ -207,7 +228,7 @@ function existingTag(root: string, tag: string): string | null {
       throw new Error('Malformed release tag observation.')
     if (value.object.type === 'commit') return value.object.sha
     if (value.object.type !== 'tag') throw new Error('Release tag does not resolve to a commit.')
-    run = runner.run(root, ['api', `repos/{owner}/{repo}/git/tags/${value.object.sha}`])
+    run = runner.run(root, ['api', `repos/${repo}/git/tags/${value.object.sha}`])
     if (!run.ok) throw new Error('Could not resolve annotated release tag.')
     value = parse(run.stdout)
   }
@@ -229,42 +250,57 @@ export function publishRelease(
   const plan = planRelease(root, item, version)
   if (plan.blockers.length > 0) throw new Error(plan.blockers.join(' '))
   if (plan.head !== expectedHead) throw new Error('Release head changed; no publication was attempted.')
-  const found = existingRelease(root, plan.tag)
-  const tagHead = existingTag(root, plan.tag)
+  const repo = workflowRepository(root, item)
+  const found = existingRelease(root, repo, plan.tag)
+  const tagHead = existingTag(root, repo, plan.tag)
   if (tagHead !== null && tagHead !== expectedHead)
     throw new Error('The existing tag points at another commit; it will not be overwritten.')
-  let url = found?.url
-  if (!found) {
-    const directory = join(root, '.dkm', 'release-notes')
-    mkdirSync(directory, { recursive: true })
-    const path = join(directory, `${randomUUID()}.md`)
-    const argv = ['release', 'create', plan.tag, '--target', expectedHead, '--title', plan.tag, '--notes-file', path]
-    try {
-      writeFileSync(path, plan.notes, { mode: 0o600 })
-      allowWorkflowOperation(root, argv)
-      if (resolveHead(root) !== expectedHead || git(root, ['status', '--porcelain', '--untracked-files=all']))
-        throw new Error('Release checkout changed before publication.')
-      const made = runner.run(root, argv)
-      if (!made.ok)
-        throw new Error('Release publication did not confirm completion; inspect/retry, never assume success.')
-      const confirmed = existingRelease(root, plan.tag)
-      if (!confirmed || existingTag(root, plan.tag) !== expectedHead)
-        throw new Error('Release result could not be verified; inspect/retry before claiming success.')
-      url = confirmed.url
-    } finally {
-      rmSync(path, { force: true })
-    }
-  } else if (tagHead !== expectedHead) throw new Error('Existing release has no matching observed tag.')
-  if (!url) throw new Error('Release URL was not observed.')
-  const release = { tag: plan.tag, head: expectedHead, url }
-  const state = readWorkflow(root, item)
-  if (
-    !state.releases.some(
-      (value) => value.tag === release.tag && value.head === release.head && value.url === release.url
+  const release = { tag: plan.tag, head: expectedHead, url: found?.url ?? '' }
+  updateWorkflow(root, item, plan.revision, (next) => {
+    const fresh = planRelease(root, item, version)
+    if (fresh.blockers.length > 0) throw new Error(fresh.blockers.join(' '))
+    if (fresh.head !== expectedHead || fresh.tag !== plan.tag)
+      throw new Error('Release checkout or contract changed before publication.')
+    if (!found) {
+      const directory = join(root, '.dkm', 'release-notes')
+      mkdirSync(directory, { recursive: true })
+      const path = join(directory, `${randomUUID()}.md`)
+      const argv = [
+        'release',
+        'create',
+        plan.tag,
+        '--repo',
+        repo,
+        '--target',
+        expectedHead,
+        '--title',
+        plan.tag,
+        '--notes-file',
+        path
+      ]
+      try {
+        writeFileSync(path, fresh.notes, { mode: 0o600 })
+        allowWorkflowOperation(root, argv)
+        if (resolveHead(root) !== expectedHead || git(root, ['status', '--porcelain', '--untracked-files=all']))
+          throw new Error('Release checkout changed before publication.')
+        const made = runner.run(root, argv)
+        if (!made.ok)
+          throw new Error('Release publication did not confirm completion; inspect/retry, never assume success.')
+        const confirmed = existingRelease(root, repo, plan.tag)
+        if (!confirmed || existingTag(root, repo, plan.tag) !== expectedHead)
+          throw new Error('Release result could not be verified; inspect/retry before claiming success.')
+        release.url = confirmed.url
+      } finally {
+        rmSync(path, { force: true })
+      }
+    } else if (tagHead !== expectedHead) throw new Error('Existing release has no matching observed tag.')
+    if (!release.url) throw new Error('Release URL was not observed.')
+    if (
+      !next.releases.some(
+        (value) => value.tag === release.tag && value.head === release.head && value.url === release.url
+      )
     )
-  )
-    updateWorkflow(root, item, state.revision, (next) => {
       next.releases.push(release)
-    })
+  })
   return release
 }

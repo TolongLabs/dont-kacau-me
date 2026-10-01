@@ -8,7 +8,7 @@ import { readDecisions } from './store'
 import type { WorkItemRef } from './types'
 import { publishWorkflow, recordRequest, renderWorkflow, syncWorkflow } from './workflow'
 import { allowWorkflowOperation } from './workflow-github'
-import { readWorkflow, workflowPath } from './workflow-store'
+import { readWorkflow, updateWorkflow, workflowPath } from './workflow-store'
 import type { RequestInput } from './workflow-types'
 
 let base: string
@@ -19,6 +19,8 @@ let failFetch = false
 let failPublish = false
 let losePublicationReply = false
 let afterPublish: (() => void) | null = null
+let selectedRepoId = 'R_fixture'
+let selectedItemId = 'I_fixture'
 const original = runner.run
 const item: WorkItemRef = { repoNodeId: 'R_fixture', itemNodeId: 'I_fixture', number: 42, kind: 'issue' }
 const first = {
@@ -46,16 +48,22 @@ beforeEach(() => {
   failPublish = false
   losePublicationReply = false
   afterPublish = null
+  selectedRepoId = 'R_fixture'
+  selectedItemId = 'I_fixture'
   runner.run = (_root, argv, input) => {
     calls.push({ argv, input })
     const path = argv[1]
+    if (argv.join(' ') === 'repo view --json id,nameWithOwner')
+      return { ok: true, stdout: JSON.stringify({ id: selectedRepoId, nameWithOwner: 'owner/repo' }), stderr: '' }
+    if (argv.join(' ') === 'api repos/owner/repo/issues/42')
+      return { ok: true, stdout: JSON.stringify({ node_id: selectedItemId }), stderr: '' }
     if (argv.includes('--paginate')) {
-      if (path !== 'repos/{owner}/{repo}/issues/42/comments?per_page=100' || !argv.includes('--slurp'))
+      if (path !== 'repos/owner/repo/issues/42/comments?per_page=100' || !argv.includes('--slurp'))
         throw new Error('Fixture rejects invalid GitHub pagination/path')
       return { ok: !failFetch, stdout: JSON.stringify(pages), stderr: 'fixture fetch failure' }
     }
     if (argv.join(' ') === 'api user --jq .login') return { ok: true, stdout: 'publisher\n', stderr: '' }
-    if (path === 'repos/{owner}/{repo}/issues/42/comments' && argv.includes('POST')) {
+    if (path === 'repos/owner/repo/issues/42/comments' && argv.includes('POST')) {
       if (!failPublish) {
         const body = JSON.parse(input ?? '{}').body as string
         pages = [[first, { ...first, id: 901, user: { login: 'publisher' }, body }]]
@@ -67,7 +75,7 @@ beforeEach(() => {
         stderr: 'fixture publication failure'
       }
     }
-    if (path === 'repos/{owner}/{repo}/issues/comments/901' && argv.includes('PATCH'))
+    if (path === 'repos/owner/repo/issues/comments/901' && argv.includes('PATCH'))
       return { ok: !failPublish, stdout: '{"id":901}', stderr: 'fixture publication failure' }
     throw new Error(`Unexpected fixture API call: ${argv.join(' ')}`)
   }
@@ -100,16 +108,98 @@ function input(key = 'setup', changes: Partial<RequestInput> = {}): RequestInput
 }
 
 test('nested publication policy decisions are audited whether allowed or denied', () => {
-  const argv = ['api', 'repos/{owner}/{repo}/issues/42/comments', '-X', 'POST', '--input', '-']
+  const argv = ['api', 'repos/owner/repo/issues/42/comments', '-X', 'POST', '--input', '-']
   allowWorkflowOperation(root, argv)
   const path = join(root, '.dkm', 'policy.toml')
   writeFileSync(path, readFileSync(path, 'utf8').replace('egress = "off"', 'egress = "deny"'))
   expect(() => allowWorkflowOperation(root, argv)).toThrow(/deny/)
   const records = readDecisions(root)
   expect(records.map((record) => record.decision)).toEqual(['allow', 'deny'])
-  expect(records[0]?.summary).toStartWith('gh api repos/{owner}/{repo}/issues/42/comments -X POST')
+  expect(records[0]?.summary).toStartWith('gh api repos/owner/repo/issues/42/comments -X POST')
   expect(records[1]?.reverse).toBe('blocked on egress')
   expect(calls).toHaveLength(0)
+})
+
+test('repository or item drift cannot contaminate a binding or redirect publication', () => {
+  const saved = syncWorkflow(root, item)
+  selectedRepoId = 'R_other'
+  expect(() => syncWorkflow(root, item)).toThrow(/bound repository/i)
+  expect(() => publishWorkflow(root, item)).toThrow(/bound repository/i)
+  expect(readWorkflow(root, item)).toEqual(saved)
+  selectedRepoId = 'R_fixture'
+  selectedItemId = 'I_other'
+  expect(() => syncWorkflow(root, item)).toThrow(/bound work item/i)
+  expect(calls.some((call) => call.argv.includes('POST') || call.argv.includes('PATCH'))).toBe(false)
+})
+
+test('deleted and edited public verdicts are reconciled instead of trusting cached publication metadata', () => {
+  syncWorkflow(root, item)
+  recordRequest(root, item, input())
+  publishWorkflow(root, item)
+  const remote = (pages as (typeof first)[][])[0]?.find((comment) => comment.id === 901)
+  if (!remote) throw new Error('Missing published fixture')
+  pages = [[first, { ...remote, body: `${remote.body}\nExternally edited` }]]
+  publishWorkflow(root, item)
+  expect(calls.filter((call) => call.argv.includes('PATCH'))).toHaveLength(1)
+  pages = [[first]]
+  publishWorkflow(root, item)
+  expect(calls.filter((call) => call.argv.includes('POST'))).toHaveLength(2)
+  expect(readWorkflow(root, item).publication?.commentId).toBe('901')
+})
+
+test('re-review preserves the complete previous request and measured implementation evidence', () => {
+  syncWorkflow(root, item)
+  const before = input('setup', {
+    summary: 'Previous setup',
+    phase: 'old phase',
+    link: 'https://github.com/owner/repo/pull/4',
+    implementationHead: 'a'.repeat(40),
+    prNumber: 4,
+    reportedVerification: 'Previous local evidence'
+  })
+  const saved = recordRequest(root, item, before)
+  const observed = updateWorkflow(root, item, saved.revision, (state) => {
+    const request = state.requests[0]
+    if (!request) throw new Error('Missing fixture request')
+    request.observation = {
+      head: 'a'.repeat(40),
+      mergedHead: 'b'.repeat(40),
+      state: 'MERGED',
+      checksAvailable: true,
+      checks: [{ name: 'verify', checkRunId: '11', attempt: 1, conclusion: 'success' }],
+      observedAt: '2026-10-01T00:00:00Z'
+    }
+  })
+  const old = observed.requests[0]
+  if (!old) throw new Error('Missing observed request')
+  const { history: _history, ...snapshot } = old
+  pages = [[{ ...first, body: 'Changed direction', updated_at: '2026-10-01T00:01:00Z' }]]
+  syncWorkflow(root, item)
+  const next = recordRequest(root, item, input('setup', { implementationHead: 'c'.repeat(40), prNumber: 5 }))
+  expect(next.requests[0]?.history[0]).toEqual(snapshot)
+  expect(next.requests[0]?.observation).toBeNull()
+})
+
+test('incomplete historical evidence is corrupt state, not an silently accepted request history', () => {
+  syncWorkflow(root, item)
+  recordRequest(root, item, input())
+  const saved = recordRequest(root, item, input('setup', { why: 'Reviewed again' }))
+  const raw = {
+    ...saved,
+    requests: saved.requests.map((request) => ({
+      ...request,
+      history: [
+        {
+          reviewedFrom: request.reviewedFrom,
+          decision: request.decision,
+          delivery: request.delivery,
+          why: request.why
+        }
+      ]
+    }))
+  }
+  writeFileSync(workflowPath(root, item), JSON.stringify(raw))
+  expect(() => readWorkflow(root, item)).toThrow(/Invalid workflow state/)
 })
 
 test('disabled workflow makes no request or state mutation', () => {
@@ -123,9 +213,9 @@ test('all pages and distinct comment IDs are retained, not deduplicated by prose
   pages = [[first], [{ ...first, id: 102, html_url: 'https://github.com/owner/repo/issues/42#issuecomment-102' }]]
   const state = syncWorkflow(root, item)
   expect(state.comments.map((comment) => comment.id)).toEqual(['101', '102'])
-  expect(calls[0]?.argv).toEqual([
+  expect(calls.find((call) => call.argv.includes('--paginate'))?.argv).toEqual([
     'api',
-    'repos/{owner}/{repo}/issues/42/comments?per_page=100',
+    'repos/owner/repo/issues/42/comments?per_page=100',
     '--paginate',
     '--slurp'
   ])

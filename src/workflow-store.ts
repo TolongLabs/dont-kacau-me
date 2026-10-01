@@ -72,6 +72,27 @@ function textFields(value: Record<string, unknown>, fields: string[]): boolean {
   return fields.every((field) => typeof value[field] === 'string')
 }
 
+function validObservation(observation: unknown): boolean {
+  if (observation === null) return true
+  return (
+    object(observation) &&
+    textFields(observation, ['head', 'observedAt']) &&
+    ['OPEN', 'CLOSED', 'MERGED'].includes(String(observation.state)) &&
+    typeof observation.checksAvailable === 'boolean' &&
+    (observation.mergedHead === null || typeof observation.mergedHead === 'string') &&
+    Array.isArray(observation.checks) &&
+    observation.checks.every(
+      (check) =>
+        object(check) &&
+        textFields(check, ['name', 'checkRunId']) &&
+        Number.isInteger(check.attempt) &&
+        ['success', 'failure', 'neutral', 'cancelled', 'timed_out', 'skipped', 'pending'].includes(
+          String(check.conclusion)
+        )
+    )
+  )
+}
+
 function validState(value: unknown): value is WorkflowState {
   if (!object(value) || value.version !== 1 || !Number.isInteger(value.revision) || Number(value.revision) < 0)
     return false
@@ -121,37 +142,26 @@ function validState(value: unknown): value is WorkflowState {
         !request.history.every(
           (entry) =>
             object(entry) &&
-            textFields(entry, ['reviewedFrom', 'why']) &&
+            textFields(entry, [
+              'commentId',
+              'key',
+              'reviewedFrom',
+              'summary',
+              'why',
+              'phase',
+              'link',
+              'reportedVerification',
+              'implementationHead'
+            ]) &&
             decisions.includes(entry.decision as never) &&
-            deliveries.includes(entry.delivery as never)
+            deliveries.includes(entry.delivery as never) &&
+            (entry.prNumber === null || (Number.isInteger(entry.prNumber) && Number(entry.prNumber) > 0)) &&
+            (entry.supersedes === null || typeof entry.supersedes === 'string') &&
+            validObservation(entry.observation)
         )
       )
         return false
-      const observation = request.observation
-      if (observation !== null) {
-        if (
-          !object(observation) ||
-          !textFields(observation, ['head', 'observedAt']) ||
-          !['OPEN', 'CLOSED', 'MERGED'].includes(String(observation.state)) ||
-          typeof observation.checksAvailable !== 'boolean'
-        )
-          return false
-        if (observation.mergedHead !== null && typeof observation.mergedHead !== 'string') return false
-        if (
-          !Array.isArray(observation.checks) ||
-          !observation.checks.every(
-            (check) =>
-              object(check) &&
-              textFields(check, ['name', 'checkRunId']) &&
-              Number.isInteger(check.attempt) &&
-              ['success', 'failure', 'neutral', 'cancelled', 'timed_out', 'skipped', 'pending'].includes(
-                String(check.conclusion)
-              )
-          )
-        )
-          return false
-      }
-      return true
+      return validObservation(request.observation)
     })
   )
     return false

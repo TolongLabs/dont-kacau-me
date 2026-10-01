@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { resolveHead } from './git'
 import { runner } from './github'
 import type { WorkItemRef } from './types'
-import { recordRequest, syncWorkflow } from './workflow'
+import { recordRequest, renderWorkflow, staleRequest, syncWorkflow } from './workflow'
 import { observeWorkflow, planRelease, publishRelease } from './workflow-release'
 import { readWorkflow } from './workflow-store'
 
@@ -21,6 +21,10 @@ let checks: unknown
 let fetchFailure = false
 let created = false
 let tagHead: string | null
+let missingRelease = 'HTTP 404: Not Found'
+let releaseDraft = false
+let duringTagLookup: (() => void) | null = null
+let sourcePages: unknown
 const original = runner.run
 const item: WorkItemRef = { repoNodeId: 'R_fixture', itemNodeId: 'I_fixture', number: 42, kind: 'issue' }
 const source = {
@@ -71,11 +75,19 @@ beforeEach(() => {
   fetchFailure = false
   created = false
   tagHead = null
+  missingRelease = 'HTTP 404: Not Found'
+  releaseDraft = false
+  duringTagLookup = null
+  sourcePages = [[source]]
   runner.run = (_root, argv) => {
     calls.push(argv)
     const path = argv[1] ?? ''
+    if (argv.join(' ') === 'repo view --json id,nameWithOwner')
+      return { ok: true, stdout: JSON.stringify({ id: 'R_fixture', nameWithOwner: 'owner/repo' }), stderr: '' }
+    if (argv.join(' ') === 'api repos/owner/repo/issues/42')
+      return { ok: true, stdout: JSON.stringify({ node_id: 'I_fixture' }), stderr: '' }
     if (argv.includes('--paginate') && path.includes('/issues/42/comments'))
-      return { ok: true, stdout: JSON.stringify([[source]]), stderr: '' }
+      return { ok: true, stdout: JSON.stringify(sourcePages), stderr: '' }
     if (argv[0] === 'pr' && argv[1] === 'view' && argv[2] === '4')
       return {
         ok: true,
@@ -87,9 +99,9 @@ beforeEach(() => {
         }),
         stderr: ''
       }
-    if (path === `repos/{owner}/{repo}/commits/${prHead}/check-runs?per_page=100`)
+    if (path === `repos/owner/repo/commits/${prHead}/check-runs?per_page=100`)
       return { ok: !fetchFailure, stdout: JSON.stringify(checks), stderr: 'fixture unavailable' }
-    if (head !== prHead && path === `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`)
+    if (head !== prHead && path === `repos/owner/repo/commits/${head}/check-runs?per_page=100`)
       return { ok: true, stdout: JSON.stringify([{ check_runs: [] }]), stderr: '' }
     if (argv[0] === 'release' && argv[1] === 'view' && argv[2] === 'v1.1.0')
       return {
@@ -97,16 +109,21 @@ beforeEach(() => {
         stdout: JSON.stringify({
           tagName: 'v1.1.0',
           targetCommitish: head,
+          isDraft: releaseDraft,
           url: 'https://github.com/owner/repo/releases/tag/v1.1.0'
         }),
-        stderr: created ? '' : 'HTTP 404: Not Found'
+        stderr: created ? '' : missingRelease
       }
-    if (path === 'repos/{owner}/{repo}/git/ref/tags/v1.1.0')
+    if (path === 'repos/owner/repo/git/ref/tags/v1.1.0') {
+      const concurrent = duringTagLookup
+      duringTagLookup = null
+      concurrent?.()
       return {
         ok: tagHead !== null,
         stdout: JSON.stringify({ object: { type: 'commit', sha: tagHead } }),
         stderr: tagHead ? '' : 'HTTP 404: Not Found'
       }
+    }
     if (argv[0] === 'release' && argv[1] === 'create') {
       if (argv[2] !== 'v1.1.0' || argv[argv.indexOf('--target') + 1] !== head)
         throw new Error('Fixture rejects wrong release tag/head')
@@ -243,6 +260,62 @@ test('accepted blocked work cannot disappear from the release gate', () => {
     prNumber: null
   })
   expect(() => publishRelease(root, item, '1.1.0', head, true)).toThrow(/blocked/i)
+})
+
+test('the real gh release-not-found contract permits first publication but other errors stay closed', () => {
+  missingRelease = 'release not found\n'
+  expect(publishRelease(root, item, '1.1.0', head, true).head).toBe(head)
+  expect(calls.filter((argv) => argv[0] === 'release' && argv[1] === 'create')).toHaveLength(1)
+  created = false
+  missingRelease = 'HTTP 401: Bad credentials'
+  expect(() => publishRelease(root, item, '1.1.0', head, true)).toThrow(/could not verify/i)
+  expect(calls.filter((argv) => argv[0] === 'release' && argv[1] === 'create')).toHaveLength(1)
+})
+
+test('an existing draft is not claimed as published or silently promoted', () => {
+  created = true
+  releaseDraft = true
+  tagHead = head
+  expect(() => publishRelease(root, item, '1.1.0', head, true)).toThrow(/draft/i)
+  expect(readWorkflow(root, item).releases).toHaveLength(0)
+  expect(calls.some((argv) => argv[0] === 'release' && ['create', 'edit'].includes(argv[1] ?? ''))).toBe(false)
+})
+
+test('a workflow change after release planning blocks publication rather than hiding newly accepted blocked work', () => {
+  duringTagLookup = () => {
+    const request = readWorkflow(root, item).requests[0]
+    if (!request) throw new Error('Missing fixture request')
+    const { history: _history, observation: _observation, ...record } = request
+    recordRequest(root, item, { ...record, key: 'late-blocked', delivery: 'blocked' })
+  }
+  expect(() => publishRelease(root, item, '1.1.0', head, true)).toThrow(/state changed/i)
+  expect(created).toBe(false)
+  expect(readWorkflow(root, item).requests.find((request) => request.key === 'late-blocked')?.delivery).toBe('blocked')
+})
+
+test('explicit current-source supersession resolves a deleted-source tombstone without erasing its evidence', () => {
+  const old = readWorkflow(root, item).requests[0]
+  if (!old) throw new Error('Missing fixture request')
+  sourcePages = [[{ ...source, id: 102, body: 'Replacement request' }]]
+  const synced = syncWorkflow(root, item)
+  const replacement = synced.comments.find((comment) => comment.id === '102')
+  if (!replacement) throw new Error('Missing replacement source')
+  const { history: _history, observation: _observation, ...record } = old
+  recordRequest(root, item, {
+    ...record,
+    commentId: '102',
+    key: 'replacement',
+    reviewedFrom: replacement.fingerprint,
+    supersedes: '101:setup'
+  })
+  observeWorkflow(root, item)
+  expect(planRelease(root, item, '1.1.0').blockers).toEqual([])
+  const retired = readWorkflow(root, item).requests.find((request) => request.commentId === '101')
+  expect(retired?.decision).toBe('superseded')
+  expect(retired?.history).toHaveLength(1)
+  if (!retired) throw new Error('Missing retired request')
+  expect(staleRequest(readWorkflow(root, item), retired)).toBe(false)
+  expect(renderWorkflow(readWorkflow(root, item))).toContain('superseded')
 })
 
 test('exact-head release is observed and retry is idempotent', () => {

@@ -157,11 +157,16 @@ state; only configuration belongs in Git. Add `!.dkm/workflow.toml` to the proje
 
 The verdict table separates Request, Decision, Why, Phase, Delivery, Issue/PR and Verification. An edited source needs
 re-review; explicit supersession keeps history. A separate stable comment marker prevents repeated writes without
-requiring another Git commit. Original technical receipts remain unchanged.
+requiring another Git commit. Original technical receipts remain unchanged. Re-review retains the complete previous
+request and measured evidence. Explicit supersession retires obsolete/deleted-source requests without erasing history.
+
+Repository-scoped operations verify the bound repository/item node IDs and pin the resolved owner/repository explicitly.
+Changing a remote cannot silently reuse another repository's intake, and `GH_REPO` cannot redirect placeholder paths.
 
 Publication uses an exclusive publisher guard. A lost first-publication reply is recovered by matching the marker to the
 actually authenticated GitHub author; another author's marker cannot hide their request. Multiple own verdict comments
-require inspection rather than silently choosing one. Each nested publication permission decision is audited.
+require inspection rather than silently choosing one. Deleted verdicts are recreated; edited remote bodies are repaired
+on the next explicit publish, rather than trusting a cached fingerprint. Each nested publication decision is audited.
 
 ### Releases Have Separate Gates
 
@@ -179,6 +184,9 @@ separate operation requiring:
 Existing tags on another commit are not overwritten. A successful result is re-observed before being recorded, and a
 retry finds the same exact-head release rather than claiming an unverified publication. This initial version publishes
 GitHub source releases; project-specific binary/package builds remain normal host tasks, not automatic asset uploads.
+Existing drafts are blocked, not reported as published or silently promoted. Release publication pins the workflow
+revision and holds its state guard through bounded creation/confirmation; another writer must retry rather than change
+accepted work midway through publication.
 
 ### Workflow Limits
 

@@ -47,10 +47,9 @@ export type PullObservation = {
   observedAt: string
 }
 
-export type WorkflowRequest = RequestInput & {
-  history: { reviewedFrom: string; decision: ProductDecision; delivery: Delivery; why: string }[]
-  observation: PullObservation | null
-}
+export type RequestHistory = RequestInput & { observation: PullObservation | null }
+
+export type WorkflowRequest = RequestHistory & { history: RequestHistory[] }
 
 export type WorkflowState = {
   version: 1
@@ -62,4 +61,11 @@ export type WorkflowState = {
   releases: { tag: string; head: string; url: string }[]
 }
 
-export type ReleasePlan = { version: string; tag: string; head: string; notes: string; blockers: string[] }
+export type ReleasePlan = {
+  version: string
+  tag: string
+  head: string
+  revision: number
+  notes: string
+  blockers: string[]
+}

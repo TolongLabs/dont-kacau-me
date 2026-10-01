@@ -752,23 +752,32 @@ The implementation uses these concrete keys:
 See the [workflow specification](superpowers/specs/2026-09-30-intake-release-workflow.md) for the product boundary.
 
 - Committed `workflow.toml` resolves through `dkmPath()` beside shared policy; no config means disabled.
-- Versioned workflow records are keyed by explicit `repoNodeId` and `itemNodeId`, not directory/branch names. Short
-  state write guards and atomic replacement protect these records only; corrupt state fails visibly instead of
-  resetting.
-- Explicit sync fetches paginated comments; a comment fingerprint binds each agent review to the exact observed version.
-  An edit makes its prior review stale. Request identity is comment ID plus an agent-supplied key, never prose equality.
+- Runtime records live at `workflows/<sha256(repoNodeId + NUL + itemNodeId)>.json` under shared `.dkm`. Version 1
+  carries revision, explicit work item, comments, requests, publication metadata and observed releases. Atomic
+  revision-checked writes protect these records only; corrupt state fails visibly rather than resetting.
+- Repository operations verify `gh repo view` node identity and the bound issue/PR node. REST paths use the resolved
+  owner/repository; PR and release commands include `--repo`. No placeholder can be redirected by `GH_REPO` afterward.
+- Explicit sync fetches paginated comments. SHA256 of body plus NUL plus update time binds a review to its source
+  version. Request identity is comment ID plus an independent key. Re-review and supersession retain complete prior
+  request and observation snapshots. Explicitly superseded requests are retired; unresolved stale/deleted requests still
+  block.
 - Structured verdicts are reported judgments. PR/check adapters retain failed/malformed/empty evidence as unavailable,
   never successful verification. Local command hints are instructions to normal host tools, not subprocess execution.
-- Explicit verdict publication has a separate marker and state fingerprint; it does not change `Receipt` or Stop's
-  existing SHA/check/blocker deduplication. Only schema-approved summary fields are rendered, not raw comment bodies. A
-  `.publish.lock` spans explicit publication; a successful response updates only publication metadata against freshly
-  read state, preserving concurrent requests. Lost replies recover the marker only for the authenticated GitHub author;
-  ambiguous own markers fail visibly. Other authors' markers remain intake.
-- A release plan queries required checks on the exact current SHA and uses the last stored PR observations. Publication
-  refreshes intake/PR evidence before planning. It separately requires config opt-in, explicit approval, a clean target
-  branch and policy allow for the generated operation. Each additional `decide()` call is appended to the normal audit
-  log; no workflow prose enters policy. Required checks must succeed for the implementation and release SHAs. Stale
-  review/head or unresolved accepted work blocks publication. No hook publishes releases.
+- Verdict publication uses a separate marker/body fingerprint, leaving `Receipt` and Stop's deduplication unchanged.
+  `.publish.lock` spans publication. A successful response saves metadata against a fresh revision without losing
+  concurrent requests. Only schema-approved summaries are rendered, never raw source bodies or tool logs.
+- Sync reconciles cached publication metadata with the actual remote body/existence. Lost replies recover markers only
+  for the authenticated author; ambiguous own markers fail visibly and foreign markers remain intake. Edited verdicts
+  are repaired and removed verdicts recreated by the next explicit publish.
+- Release plans carry the exact SHA and workflow revision, query target-SHA checks and use the last PR observations.
+  Publication refreshes intake/PR evidence. Config opt-in, explicit approval, a clean target branch and successful
+  configured checks on implementation and release SHAs are independent requirements.
+- Publication checks the planned revision before taking the state guard and holds it through bounded creation and
+  confirmation, preventing concurrent readiness changes. It rechecks the contract/target gates inside that guard. Every
+  additional policy decision is audited; no workflow prose enters authority and no hook publishes a release.
+- `gh release view` absence accepts the CLI's exact `release not found` contract or HTTP 404, not arbitrary failures.
+  Drafts are blocked. Existing/created tags must resolve to the exact commit; published URLs are re-observed, not
+  assumed.
 - Injection hooks may add a bounded local summary when enabled; they do not start another fetch/poller/model. The lead
   operates the feature through its command contract under normal permissions.
 - The feature-branch TolongLarp pilot invokes the source CLI explicitly; no installed-cache edit or distribution release

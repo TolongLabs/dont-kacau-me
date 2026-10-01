@@ -37,12 +37,28 @@ Contents:
 **Ambient Excludes Raw Commits Deliberately.** A publisher's receipt captures its current head SHA. Ingest has no
 repository-wide commit query.
 
+## Optional Intake-to-Release Requirements
+
+**Owner-Approved, 2026-09-30.** These requirements apply only when `.dkm/workflow.toml` enables the workflow. The
+[workflow specification](superpowers/specs/2026-09-30-intake-release-workflow.md) defines the approved boundary.
+
+| ID              | Requirement                                                                    | Acceptance                                                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **WF-OPTIN**    | Missing config is disabled; malformed config is not permission                 | Legacy CLI/hooks/receipt tests pass unchanged; no new network/state/publication when off                                                                    |
+| **WF-INTAKE**   | Read all comments on an explicitly bound item, including edits                 | Correct pagination/REST paths; failed reads preserve state; equal text in different IDs stays distinct                                                      |
+| **WF-REVIEW**   | Track separately keyed atomic requests, decisions, rationale, phase and links  | One verdict row per request; stale comment review invalidates readiness; explicit supersession preserves history                                            |
+| **WF-TRUST**    | Distinguish reported judgments/local tests from measured PR/check observations | Agent claims never certify checks, merged state, release readiness or permission                                                                            |
+| **WF-PUBLISH**  | Explicitly upsert a separate human verdict comment                             | Meaningful transitions trigger publication without a new Git head; repeated identical state does not write                                                  |
+| **WF-STATE**    | Guard versioned state and short atomic updates                                 | Corrupt files are not erased, stale writers fail and concurrent updates do not silently overwrite                                                           |
+| **WF-RELEASE**  | Prepare exact-head versioned release plans and separately gate publication     | Disabled default, explicit approval, clean target branch, fresh successful required hosted checks and policy allow; inbound prose cannot unlock publication |
+| **WF-PORTABLE** | Keep product rules/verification hints/tag conventions in thin repo config      | TolongLarp and another fixture repo use the same implementation; no TolongLarp imports or developer paths                                                   |
+
 ## Non-Functional Requirements
 
 - **NFR-AUTH** — `decide()` remains a pure function of permission input and policy, with no store, GitHub or hook
   imports
-- **NFR-NODAEMON** — Receipt, ingest and decision work runs only on hooks. The usage-limit supervisor is opt-in and
-  foreground
+- **NFR-NODAEMON** — Default coordination remains hook-driven. The usage-limit supervisor and optional workflow CLI
+  operations are explicit foreground work; no workflow poller, model call or test execution starts on a hook path
 - **NFR-BUDGET** — Hook declarations carry fixed timeouts, and ingest stops adding receipt fetches after its wall-clock
   budget is spent
 - **NFR-SCHEMA** — DKM constructs receipts from the fields in `Receipt`; no hook reads a transcript or unrestricted tool
@@ -59,7 +75,8 @@ Each with the reason, so nobody relitigates it:
 
 - **Approving Permissions on a Peer's Say-So** — the authority principle; `decide()` has no inbound-state dependency
 - **Free-Form Agent Chat** — cross-session messaging already does this, and prose carries no provenance
-- **Spawning or Scheduling Agents** — Agent Teams' job
+- **Spawning or Scheduling Agents** — Agent Teams' job. The optional workflow supplies records and an operating command
+  for an existing lead agent; it does not add a scheduler or model-calling orchestration engine
 - **File Locking and Conflict Resolution** — worktree isolation plus Agent Teams' file-locked claiming already cover it
 - **A Dashboard** — Agent View already aggregates a developer's local sessions
 - **Live Mid-Turn Delivery** — v2. It needs a supervised lifecycle on the _hook_ path, which v1 deliberately has none

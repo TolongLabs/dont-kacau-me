@@ -13,6 +13,7 @@ import {
   writeCursors
 } from './store'
 import type { Binding, WorkItemRef } from './types'
+import { runWorkflowCLI } from './workflow-cli'
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`)
@@ -85,6 +86,15 @@ function main(): void {
     )
   }
   if (root === null) fail('not inside a git worktree')
+
+  if (command === 'workflow') {
+    try {
+      process.stdout.write(`${runWorkflowCLI(root, rest)}\n`)
+    } catch (error) {
+      fail(error instanceof Error ? error.message : 'Workflow operation failed.')
+    }
+    return
+  }
 
   if (command === 'bind') {
     const item = resolve(root, rest[0])
@@ -182,7 +192,7 @@ function main(): void {
   }
 
   fail(
-    `unknown command: ${command}\nexpected one of: init, bind, follow, unfollow, note, blocker, mentions, run, status`
+    `unknown command: ${command}\nexpected one of: init, bind, follow, unfollow, note, blocker, mentions, run, status, workflow`
   )
 }
 

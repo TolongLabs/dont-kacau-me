@@ -12,6 +12,7 @@ import {
   writePending
 } from '../store'
 import type { CursorFile, PendingEvent, Receipt, TrackingTier, WorkItemRef } from '../types'
+import { workflowHint } from '../workflow-cli'
 
 function short(sha: string): string {
   return sha.slice(0, 7)
@@ -218,7 +219,7 @@ export function ingest(
 }
 
 export function drainAndRender(root: string, sessionId: string): string {
-  return render(drainPending(root, recipientKey(sessionId)))
+  return render(drainPending(root, recipientKey(sessionId))) + workflowHint(root)
 }
 
 /**

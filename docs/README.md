@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript_strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Biome](https://img.shields.io/badge/Biome_lint_%26_format-60A5FA?style=for-the-badge&logo=biome&logoColor=white)
 ![MIT licence](https://img.shields.io/badge/MIT_licence-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/v0.5.4-informational?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.6.0_pending_review-informational?style=for-the-badge)
 
 **A Claude Code plugin that answers for your AI coding sessions — and keeps them working while you are away.**
 
@@ -24,6 +24,7 @@ _Kacau_ is Malay for "to disturb". The name is the product: don't bother me.
     <li><a href="#quick-start">Quick Start</a></li>
     <li><a href="#which-permission-mode-to-use">Which Permission Mode to Use</a></li>
     <li><a href="#the-commands">The Commands</a></li>
+    <li><a href="#optional-intake-to-release-workflow">Optional Intake-to-Release Workflow</a></li>
     <li><a href="#how-it-stays-safe">How It Stays Safe</a></li>
     <li><a href="#what-dkm-cannot-do">What DKM Cannot Do</a></li>
     <li><a href="#under-the-hood">Under the Hood</a></li>
@@ -113,6 +114,89 @@ bun "${CLAUDE_PLUGIN_ROOT}"/src/cli.ts run "work through issue 12" -- --effort h
 
 Your policy answers every prompt, and the run resumes the same session after a usage-limit wait. See
 [`dkm run`](scenarios.md#dkm-run-a-run-that-outlives-its-usage-limit) for the full behaviour.
+
+## Optional Intake-to-Release Workflow
+
+**Opt-In, Pending Review.** The feature branch adds a reusable workflow for the current lead agent; it does not spawn
+agents, run a model on hooks or replace your permission policy. Existing behavior is unchanged without a contract. The
+0.6.0 manifests are branch-local preparation, not a published release before AlaskanTuna approval.
+
+1. Bind an intake issue/PR explicitly with `dkm-bind`.
+1. Run `/dont-kacau-me:dkm-workflow status`, or invoke the source CLI below during a development pilot.
+1. Use `workflow init` to create `.dkm/workflow.toml` with both workflow and release publication disabled. Review the
+   contract, enable intake deliberately, and commit it. Do not store a developer path or credential.
+1. Sync comments, judge each independently keyed request, record its current-source decision and inspect the table.
+1. Observe linked PR/check evidence and explicitly publish the verdict under existing authority. Accepted is not done,
+   and a local-test claim is not hosted verification.
+
+```bash
+# Development pilot: supply the feature checkout explicitly; cwd is the adopting repository.
+bun <dkm-source>/src/cli.ts workflow init
+bun <dkm-source>/src/cli.ts workflow sync
+bun <dkm-source>/src/cli.ts workflow record --input -
+bun <dkm-source>/src/cli.ts workflow observe
+bun <dkm-source>/src/cli.ts workflow render
+bun <dkm-source>/src/cli.ts workflow publish
+```
+
+```toml
+version = 1
+enabled = true
+verificationHints = ["bun test", "bun run typecheck", "bun run lint"]
+
+[release]
+enabled = false
+tagPrefix = "v"
+targetBranch = "main"
+requiredChecks = ["verify"]
+```
+
+`verificationHints` are instructions for ordinary host tools, never subprocesses DKM executes. The file is shared beside
+the main checkout's policy, including when called from a linked worktree. Requests/observations stay in ignored runtime
+state; only configuration belongs in Git. Add `!.dkm/workflow.toml` to the project's ignore exceptions.
+
+The verdict table separates Request, Decision, Why, Phase, Delivery, Issue/PR and Verification. An edited source needs
+re-review; explicit supersession keeps history. A separate stable comment marker prevents repeated writes without
+requiring another Git commit. Original technical receipts remain unchanged. Re-review retains the complete previous
+request and measured evidence. Explicit supersession retires obsolete/deleted-source requests without erasing history.
+
+Repository-scoped operations verify the bound repository/item node IDs and pin the resolved owner/repository explicitly.
+Changing a remote cannot silently reuse another repository's intake, and `GH_REPO` cannot redirect placeholder paths.
+
+Publication uses an exclusive publisher guard. A lost first-publication reply is recovered by matching the marker to the
+actually authenticated GitHub author; another author's marker cannot hide their request. Multiple own verdict comments
+require inspection rather than silently choosing one. Deleted verdicts are recreated; edited remote bodies are repaired
+on the next explicit publish, rather than trusting a cached fingerprint. Each nested publication decision is audited.
+
+### Releases Have Separate Gates
+
+`workflow release-plan --version 1.1.0` prepares notes, an exact SHA and concrete blockers. It queries hosted checks for
+that exact release head but does not publish. PR evidence comes from the last explicit `workflow observe`; publication
+refreshes both intake and PR evidence again. `workflow release-publish --version 1.1.0 --head <full-sha> --approve` is a
+separate operation requiring:
+
+- Explicit publication opt-in and a real prior approval, never inferred from a comment.
+- A clean checkout on the configured target branch, the pinned current SHA and no untriaged/stale/blocked accepted work.
+- Actually observed matching merged PRs and successful configured hosted checks on both implementation and exact release
+  SHAs; absent/failed checks stay blocked.
+- Normal policy allow for the actual GitHub operation. Deny/ask cannot be hidden inside a workflow wrapper.
+
+Existing tags on another commit are not overwritten. A successful result is re-observed before being recorded, and a
+retry finds the same exact-head release rather than claiming an unverified publication. This initial version publishes
+GitHub source releases; project-specific binary/package builds remain normal host tasks, not automatic asset uploads.
+Existing drafts are blocked, not reported as published or silently promoted. Release publication pins the workflow
+revision and holds its state guard through bounded creation/confirmation; another writer must retry rather than change
+accepted work midway through publication.
+
+### Workflow Limits
+
+- The lead still makes product judgments and decomposes requests; DKM cannot prove semantic atomicity.
+- This is explicit CLI-driven work plus a bounded local injection hint, not a daemon that processes every comment.
+- Local-only/no-CI projects can use intake/verdicts but cannot use automated release publication without configured
+  hosted checks. Local-test narrative does not bypass that gate.
+- A crashed writer/publisher can leave a `.lock` or `.publish.lock` beside its workflow state. Inspect active processes
+  and the remote verdict before manually removing a stale lock; DKM does not guess that another writer is dead. Corrupt
+  state fails visibly rather than being reset as an empty workflow.
 
 ## How It Stays Safe
 
@@ -307,6 +391,7 @@ commands/                        # slash commands
   dkm-init.md
   dkm-note.md
   dkm-status.md
+  dkm-workflow.md                 # optional intake-to-release operating command
 hooks/hooks.json                 # hook declarations
 docs/
   README.md                      # this file
@@ -332,6 +417,13 @@ src/
   revive.ts                      # limit classification and wait calculation
   store.ts                       # shared .dkm state
   types.ts                       # shared contracts
+  workflow-types.ts              # optional workflow config/request/observation contracts
+  workflow-store.ts              # validated shared config and guarded atomic workflow state
+  workflow-github.ts             # paginated intake and policy-audited verdict transport
+  workflow.ts                    # current-source verdict records and retry-safe publication
+  workflow-release.ts            # measured PR/check evidence and exact-head release gates
+  workflow-cli.ts                # explicit workflow operations and local injection hint
+  workflow*.test.ts              # state, intake, authority and release regressions
   hooks/                         # registered hook entrypoints
     unbound-hint.test.ts         # startup and permission-mode hint tests
 test/
@@ -340,6 +432,8 @@ test/
   fake-gh.ts                     # fixture-backed gh impersonator
   plugin.test.ts                 # packaging and command tests
   worktree.test.ts               # linked-worktree state tests
+  workflow-cli.test.ts           # opt-in CLI, binding and input validation
+  workflow-hook.test.ts          # local-only workflow injection and defect isolation
 ```
 
 </details>
